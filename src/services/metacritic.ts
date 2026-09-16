@@ -29,6 +29,14 @@ export class MetacriticScraper {
         ]
       };
 
+      const proxy = config.getActiveProxyUrl();
+      if (proxy) {
+        try {
+          const u = new URL(proxy);
+          launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
+        } catch {}
+      }
+
       if (config.executablePath) {
         launchOptions.executablePath = config.executablePath;
       }
@@ -41,6 +49,20 @@ export class MetacriticScraper {
   private async createPage(): Promise<Page> {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
+
+    const proxy = config.getActiveProxyUrl();
+    if (proxy) {
+      try {
+        const u = new URL(proxy);
+        if (u.username && u.password) {
+          await page.authenticate({
+            username: decodeURIComponent(u.username),
+            password: decodeURIComponent(u.password)
+          });
+        }
+      } catch {}
+    }
+
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
@@ -69,7 +91,7 @@ export class MetacriticScraper {
       console.log('[Metacritic] Fetching New Releases from https://www.metacritic.com/game/ ...');
       await page.goto('https://www.metacritic.com/game/', {
         waitUntil: 'domcontentloaded',
-        timeout: 25000
+        timeout: 40000
       });
 
       const urls = await page.evaluate(() => {
@@ -108,7 +130,7 @@ export class MetacriticScraper {
       console.log(`[Metacritic] Fetching SEE ALL page ${pageNumber} from ${url} ...`);
       await page.goto(url, {
         waitUntil: 'domcontentloaded',
-        timeout: 25000
+        timeout: 40000
       });
 
       const urls = await page.evaluate(() => {
@@ -137,13 +159,15 @@ export class MetacriticScraper {
   }
 
   /**
-   * Scrape full details for a game
+   * 3. Scrape full game details from game page
    */
-  async scrapeGameDetails(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> {
+  async scrapeGameDetails(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> { return this.scrapeGamePage(gameUrl, todayDate); }
+
+  async scrapeGamePage(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> {
     const page = await this.createPage();
     try {
-      console.log(`[Metacritic] Scraping details for ${gameUrl} ...`);
-      await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
+      await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
 
       // Extract JSON-LD and page DOM info
       const pageInfo = await page.evaluate(() => {
@@ -312,7 +336,7 @@ export class MetacriticScraper {
     const page = await this.createPage();
     try {
       const url = `${baseUrl.replace(/\/$/, '')}/${subpath}/`;
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
 
       const quotes = await page.evaluate(() => {
         // Collect quotes from review cards

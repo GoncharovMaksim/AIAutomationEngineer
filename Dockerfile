@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim
 
 # Install Chromium and required fonts/system libraries for Puppeteer
 RUN apt-get update && apt-get install -y \
-    chromium \
+    chromium python3 make g++ \
     fonts-liberation \
     fonts-noto-color-emoji \
     libasound2 \
@@ -42,18 +42,17 @@ RUN apt-get update && apt-get install -y \
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV EXECUTABLE_PATH=/usr/bin/chromium
 ENV HEADLESS=true
-ENV NODE_ENV=production
 ENV PORT=3001
 
 WORKDIR /app
 
 # Install backend dependencies
 COPY package*.json tsconfig.json ./
-RUN npm install --omit=dev || npm install
+RUN npm install
 
-# Install and build frontend
+# Install and build frontend (including devDependencies for vite/typescript)
 COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm install
+RUN cd frontend && npm install --include=dev
 
 COPY frontend ./frontend
 RUN cd frontend && npm run build
@@ -63,6 +62,8 @@ COPY src ./src
 
 # Create data directory for SQLite persistence
 RUN mkdir -p /app/data
+
+ENV NODE_ENV=production
 
 EXPOSE 3001
 
