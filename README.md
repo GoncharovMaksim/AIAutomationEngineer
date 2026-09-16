@@ -65,11 +65,17 @@
    cd AIAutomationEngineer
    ```
 
-2. Убедитесь в наличии файла `.env` в корне (ключ Gemini и параметры прокси):
+2. Создайте файл `.env` в корне проекта на основе образца `.env.example`:
+   ```bash
+   cp .env.example .env
+   ```
+   И укажите ваш ключ Google Gemini API:
    ```ini
    HEADLESS=true
-   GEMINI_API_KEY=AIzaSyDUgWTCqJDKge_jSNotdEzqGTwejKYHwWY
-   PROXY_LIST=45.145.57.233:11319:PG7pvX:8xqvbu,104.238.190.248:11024:baFwqZ:Sq51aK
+   GEMINI_API_KEY=your_gemini_api_key_here
+   # Опционально для серверов РФ (прокси):
+   # PROXY_LIST=host:port:user:pass,host:port
+   PORT=3001
    ```
 
 3. Установите зависимости и соберите фронтенд:
