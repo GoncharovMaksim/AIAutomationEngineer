@@ -219,6 +219,31 @@ export function createApp() {
     }, 500);
   });
 
+  // Admin Database Reset endpoint (clears all games and starts clean 20-game crawl)
+  app.post('/api/admin/reset-database', async (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    try {
+      if (crawlWorker.running) {
+        return res.status(409).json({ success: false, message: 'Сборщик уже выполняется. Дождитесь окончания.' });
+      }
+      await gameRepository.resetDatabase();
+      const autoStart = req.query.autoStart === 'true' || req.body?.autoStart === true;
+      if (autoStart) {
+        crawlWorker.runJob(true).catch(err => console.error('[API] Auto-crawl error:', err));
+      }
+      res.json({
+        success: true,
+        message: autoStart
+          ? 'База данных очищена! Автоматический сбор первых 20 игр запущен.'
+          : 'База данных успешно очищена и состояние сброшено.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Serve Frontend build in production if available
   const frontendDist = path.resolve(process.cwd(), 'frontend', 'dist');
   if (fs.existsSync(frontendDist)) {

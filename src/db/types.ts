@@ -95,4 +95,5 @@ export interface IGameRepository {
   getRecentLogs(limit?: number): Promise<WorkerLog[]>;
   pruneOldLogs(keepCount?: number): Promise<void>;
   checkpointWal(): Promise<void>;
+  resetDatabase(): Promise<void>;
 }

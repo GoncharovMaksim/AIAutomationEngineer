@@ -433,4 +433,22 @@ export class SqliteDriver implements IGameRepository {
       console.warn('[SqliteDriver] WAL checkpoint warning:', e.message);
     }
   }
+
+  async resetDatabase(): Promise<void> {
+    const db = this.getClient();
+    const today = new Date().toISOString().split('T')[0];
+    db.exec(`
+      DELETE FROM games;
+      DELETE FROM worker_logs;
+      UPDATE crawl_state SET 
+        last_run_date = '${today}',
+        see_all_page = 1,
+        total_processed_today = 0,
+        status = 'idle',
+        current_game = '',
+        current_step = 'Database reset'
+      WHERE id = 1;
+    `);
+    await this.checkpointWal();
+  }
 }

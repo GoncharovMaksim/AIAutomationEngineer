@@ -426,4 +426,21 @@ export class PostgresDriver implements IGameRepository {
   async checkpointWal(): Promise<void> {
     // No-op for PostgreSQL
   }
+
+  async resetDatabase(): Promise<void> {
+    const pool = this.getPool();
+    const today = new Date().toISOString().split('T')[0];
+    await pool.query(`
+      TRUNCATE TABLE games CASCADE;
+      TRUNCATE TABLE worker_logs CASCADE;
+      UPDATE crawl_state SET 
+        last_run_date = $1,
+        see_all_page = 1,
+        total_processed_today = 0,
+        status = 'idle',
+        current_game = '',
+        current_step = 'Database reset'
+      WHERE id = 1;
+    `, [today]);
+  }
 }
