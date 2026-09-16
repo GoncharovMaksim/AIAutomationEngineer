@@ -43,6 +43,8 @@ export interface GameFilters {
   platform?: string;
   sortBy?: 'metascore' | 'userscore' | 'title' | 'recent';
   sortOrder?: 'asc' | 'desc';
+  limit?: number;
+  offset?: number;
 }
 
 export const gameRepository = {
@@ -184,6 +186,15 @@ export const gameRepository = {
       query += ` ORDER BY g.title ${sortOrder}`;
     } else {
       query += ` ORDER BY g.updated_at ${sortOrder}`;
+    }
+
+    if (filters.limit && filters.limit > 0) {
+      query += ` LIMIT ?`;
+      params.push(filters.limit);
+      if (filters.offset && filters.offset > 0) {
+        query += ` OFFSET ?`;
+        params.push(filters.offset);
+      }
     }
 
     const rows = db.prepare(query).all(...params) as any[];

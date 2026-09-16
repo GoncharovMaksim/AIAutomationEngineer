@@ -15,14 +15,22 @@ export function createApp() {
   // 1. Get all games with search, platform filter, and sorting
   app.get('/api/games', (req, res) => {
     try {
-      const { search, platform, sortBy, sortOrder } = req.query;
+      const { search, platform, sortBy, sortOrder, limit, offset } = req.query;
       const games = gameRepository.getAllGames({
         search: search ? String(search) : undefined,
         platform: platform ? String(platform) : undefined,
         sortBy: sortBy as any,
-        sortOrder: sortOrder as any
+        sortOrder: sortOrder as any,
+        limit: limit ? parseInt(String(limit), 10) : undefined,
+        offset: offset ? parseInt(String(offset), 10) : undefined
       });
-      res.json({ success: true, data: games });
+      res.json({
+        success: true,
+        count: games.length,
+        limit: limit ? parseInt(String(limit), 10) : undefined,
+        offset: offset ? parseInt(String(offset), 10) : undefined,
+        data: games
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -69,6 +77,10 @@ export function createApp() {
     }
   });
 
+  // Rate limiter for manual worker triggers (cooldown 60s)
+  let lastManualRunTimestamp = 0;
+  const MANUAL_RUN_COOLDOWN_MS = 60 * 1000;
+
   // 5. Force run button trigger
   app.post('/api/worker/run', async (req, res) => {
     if (crawlWorker.running) {
@@ -77,6 +89,18 @@ export function createApp() {
         message: 'Процесс обработки уже выполняется!'
       });
     }
+
+    const now = Date.now();
+    const elapsed = now - lastManualRunTimestamp;
+    if (elapsed < MANUAL_RUN_COOLDOWN_MS) {
+      const waitSeconds = Math.ceil((MANUAL_RUN_COOLDOWN_MS - elapsed) / 1000);
+      return res.status(429).json({
+        success: false,
+        message: `Слишком частые запуски. Пожалуйста, подождите ${waitSeconds} сек. перед следующим запуском.`
+      });
+    }
+
+    lastManualRunTimestamp = now;
 
     // Launch worker asynchronously
     crawlWorker.runJob(true).catch(err => {

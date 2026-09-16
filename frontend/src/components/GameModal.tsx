@@ -51,10 +51,28 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
       .finally(() => setLoading(false));
   }, [gameId]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (gameId) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameId, onClose]);
+
   if (!gameId) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="game-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col">
         {/* Close Button */}
         <button
@@ -94,7 +112,7 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
 
               <div className="absolute bottom-4 left-6 right-6 flex flex-col sm:flex-row gap-4 items-start sm:items-end justify-between">
                 <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  <h1 id="game-modal-title" className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                     {game.title}
                   </h1>
                   <p className="text-sm text-amber-400/90 font-medium mt-1">
@@ -303,8 +321,17 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                     {game.similarGames.map((sim) => (
                       <div
                         key={sim.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Перейти к похожей игре ${sim.title}`}
                         onClick={() => onSelectGame(sim.id)}
-                        className="group p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800/80 hover:border-amber-500/40 transition-all cursor-pointer flex flex-col"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onSelectGame(sim.id);
+                          }
+                        }}
+                        className="group p-2.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800/80 hover:border-amber-500/40 focus:border-amber-500 focus:outline-none transition-all cursor-pointer flex flex-col"
                       >
                         <div className="aspect-[16/10] w-full rounded-lg overflow-hidden bg-slate-900 mb-2 relative">
                           {sim.cover_image ? (

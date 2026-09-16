@@ -80,6 +80,24 @@ class GeminiService {
     criticsReviews: string[],
     usersReviews: string[]
   ): Promise<ReviewsSummaryResult> {
+    const hasCritics = criticsReviews.length > 0;
+    const hasUsers = usersReviews.length > 0;
+
+    const noCriticsPros = 'Отзывы профессиональных критиков на Metacritic пока отсутствуют.';
+    const noCriticsCons = 'Отрицательные рецензии критиков не зафиксированы.';
+    const noUsersPros = 'Отзывы пользователей на Metacritic пока отсутствуют.';
+    const noUsersCons = 'Пользовательские жалобы не зафиксированы.';
+
+    // If both critic and user reviews are completely missing, return honest statuses without consuming LLM quota
+    if (!hasCritics && !hasUsers) {
+      return {
+        criticsSummaryPros: noCriticsPros,
+        criticsSummaryCons: noCriticsCons,
+        usersSummaryPros: noUsersPros,
+        usersSummaryCons: noUsersCons
+      };
+    }
+
     const criticsSample = criticsReviews.slice(0, 15).join('\n---\n');
     const usersSample = usersReviews.slice(0, 15).join('\n---\n');
 
@@ -92,10 +110,10 @@ class GeminiService {
 4. Что игрокам не понравилось (минусы/жалобы).
 
 Отзывы критиков:
-${criticsSample || 'Нет подробных текстовых отзывов критиков.'}
+${hasCritics ? criticsSample : 'Отзывы критиков отсутствуют (укажи в блоках критиков, что отзывы пока отсутствуют).'}
 
 Отзывы игроков:
-${usersSample || 'Нет подробных текстовых отзывов игроков.'}
+${hasUsers ? usersSample : 'Отзывы игроков отсутствуют (укажи в блоках игроков, что отзывы пользователей пока отсутствуют).'}
 
 Ответь СТРОГО в формате JSON:
 {
@@ -123,17 +141,17 @@ ${usersSample || 'Нет подробных текстовых отзывов и
     try {
       const parsed = JSON.parse(rawText);
       return {
-        criticsSummaryPros: parsed.critics_summary_pros || 'Критики в целом оценивают проект положительно.',
-        criticsSummaryCons: parsed.critics_summary_cons || 'Существенных нареканий от критиков не зафиксировано.',
-        usersSummaryPros: parsed.users_summary_pros || 'Игроки отмечают увлекательный геймплей и атмосферу.',
-        usersSummaryCons: parsed.users_summary_cons || 'Особых претензий со стороны пользователей не выявлено.'
+        criticsSummaryPros: parsed.critics_summary_pros || (hasCritics ? 'Критики в целом оценивают проект положительно.' : noCriticsPros),
+        criticsSummaryCons: parsed.critics_summary_cons || (hasCritics ? 'Существенных нареканий от критиков не зафиксировано.' : noCriticsCons),
+        usersSummaryPros: parsed.users_summary_pros || (hasUsers ? 'Игроки отмечают увлекательный геймплей и атмосферу.' : noUsersPros),
+        usersSummaryCons: parsed.users_summary_cons || (hasUsers ? 'Особых претензий со стороны пользователей не выявлено.' : noUsersCons)
       };
     } catch (e) {
       return {
-        criticsSummaryPros: 'Положительные отзывы критиков.',
-        criticsSummaryCons: 'Некоторые технические замечания.',
-        usersSummaryPros: 'Хорошие впечатления игроков.',
-        usersSummaryCons: 'Отдельные жалобы на баланс или производительность.'
+        criticsSummaryPros: hasCritics ? 'Положительные отзывы критиков.' : noCriticsPros,
+        criticsSummaryCons: hasCritics ? 'Некоторые технические замечания.' : noCriticsCons,
+        usersSummaryPros: hasUsers ? 'Хорошие впечатления игроков.' : noUsersPros,
+        usersSummaryCons: hasUsers ? 'Отдельные жалобы на баланс или производительность.' : noUsersCons
       };
     }
   }

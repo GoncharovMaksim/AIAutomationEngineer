@@ -11,8 +11,17 @@ interface GameCardProps {
 export const GameCard: React.FC<GameCardProps> = ({ game, onClick }) => {
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Открыть карточку игры ${game.title}`}
       onClick={onClick}
-      className="group relative bg-slate-900/70 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700/80 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-orange-500/10 transition-all duration-300 flex flex-col cursor-pointer transform hover:-translate-y-1"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="group relative bg-slate-900/70 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700/80 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-orange-500/10 transition-all duration-300 flex flex-col cursor-pointer transform hover:-translate-y-1"
     >
       {/* Cover Image */}
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-950">

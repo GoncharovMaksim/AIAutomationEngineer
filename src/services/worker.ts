@@ -56,44 +56,57 @@ export class CrawlWorker extends EventEmitter {
     this.emitProgress('running', '', 'Starting batch processing', 0, 20);
 
     try {
-      // Determine which source to use
-      let gameUrls: string[] = [];
-      const isFirstBatchToday = state.total_processed_today === 0;
-
-      if (isFirstBatchToday) {
-        this.log('info', 'Batch 1 of the day: Scraping Games / New Releases section...');
-        this.emitProgress('running', '', 'Scraping New Releases', 0, 20);
-        gameUrls = await metacriticScraper.getNewReleasesUrls();
-      }
-
-      // If New Releases had fewer than 20 or if this is subsequent batch today, fetch from SEE ALL
-      if (gameUrls.length < 20) {
-        const pageToFetch = isFirstBatchToday ? 1 : state.see_all_page;
-        this.log('info', `Fetching additional games from SEE ALL (page ${pageToFetch})...`);
-        this.emitProgress('running', '', `Scraping SEE ALL page ${pageToFetch}`, 0, 20);
-        const seeAllUrls = await metacriticScraper.getSeeAllPageUrls(pageToFetch);
-        gameUrls = [...new Set([...gameUrls, ...seeAllUrls])];
-
-        // Advance see_all_page for subsequent runs
-        gameRepository.updateCrawlState({ see_all_page: pageToFetch + 1 });
-      }
-
-      this.log('info', `Discovered ${gameUrls.length} total potential game links. Filtering unprocessed today...`);
-
       // Filter out games already processed today
       const alreadyProcessedToday = new Set(
         (db.prepare('SELECT id FROM games WHERE last_processed_date = ?').all(today) as { id: string }[]).map(r => r.id)
       );
 
       const targetUrls: string[] = [];
-      for (const url of gameUrls) {
-        const slugMatch = url.match(/\/game\/([a-z0-9-]+)/i);
-        const slug = slugMatch ? slugMatch[1].toLowerCase() : '';
-        if (slug && !alreadyProcessedToday.has(slug)) {
-          targetUrls.push(url);
-          if (targetUrls.length >= 20) break;
+      const seenSlugs = new Set<string>();
+
+      const addCandidateUrls = (urls: string[]) => {
+        for (const url of urls) {
+          const slugMatch = url.match(/\/game\/([a-z0-9-]+)/i);
+          const slug = slugMatch ? slugMatch[1].toLowerCase() : '';
+          if (slug && !alreadyProcessedToday.has(slug) && !seenSlugs.has(slug)) {
+            seenSlugs.add(slug);
+            targetUrls.push(url);
+            if (targetUrls.length >= 20) break;
+          }
         }
+      };
+
+      const isFirstBatchToday = state.total_processed_today === 0;
+
+      if (isFirstBatchToday) {
+        this.log('info', 'Batch 1 of the day: Scraping Games / New Releases section...');
+        this.emitProgress('running', '', 'Scraping New Releases', 0, 20);
+        const newReleasesUrls = await metacriticScraper.getNewReleasesUrls();
+        addCandidateUrls(newReleasesUrls);
       }
+
+      // If New Releases had fewer than 20 or for subsequent batches today, loop through SEE ALL pages
+      let pageToFetch = isFirstBatchToday ? 1 : state.see_all_page;
+      const MAX_PAGES_TO_SCAN = 10;
+      let pagesScanned = 0;
+
+      while (targetUrls.length < 20 && pagesScanned < MAX_PAGES_TO_SCAN) {
+        this.log('info', `Scanning SEE ALL page ${pageToFetch} (found ${targetUrls.length}/20 target games)...`);
+        this.emitProgress('running', '', `Scraping SEE ALL page ${pageToFetch}`, targetUrls.length, 20);
+        const seeAllUrls = await metacriticScraper.getSeeAllPageUrls(pageToFetch);
+        if (!seeAllUrls || seeAllUrls.length === 0) {
+          this.log('info', `No more games found on SEE ALL page ${pageToFetch}.`);
+          pageToFetch++;
+          break;
+        }
+
+        addCandidateUrls(seeAllUrls);
+        pageToFetch++;
+        pagesScanned++;
+      }
+
+      // Advance see_all_page for subsequent runs
+      gameRepository.updateCrawlState({ see_all_page: pageToFetch });
 
       this.log('info', `Selected ${targetUrls.length} new games to process today (target: 20).`);
 
