@@ -64,6 +64,7 @@ export class SqliteDriver implements IGameRepository {
         critics_summary_cons TEXT,
         users_summary_pros TEXT,
         users_summary_cons TEXT,
+        reviews_hash TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -98,6 +99,10 @@ export class SqliteDriver implements IGameRepository {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    try {
+      this.db.exec('ALTER TABLE reviews_summary ADD COLUMN reviews_hash TEXT;');
+    } catch {}
 
     // Initialize crawl_state row 1 if empty
     const state = this.db.prepare('SELECT * FROM crawl_state WHERE id = 1').get();
@@ -197,20 +202,22 @@ export class SqliteDriver implements IGameRepository {
   async upsertReviewsSummary(summary: ReviewsSummaryInput): Promise<void> {
     const db = this.getClient();
     db.prepare(`
-      INSERT INTO reviews_summary (game_id, critics_summary_pros, critics_summary_cons, users_summary_pros, users_summary_cons, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO reviews_summary (game_id, critics_summary_pros, critics_summary_cons, users_summary_pros, users_summary_cons, reviews_hash, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(game_id) DO UPDATE SET
         critics_summary_pros = excluded.critics_summary_pros,
         critics_summary_cons = excluded.critics_summary_cons,
         users_summary_pros = excluded.users_summary_pros,
         users_summary_cons = excluded.users_summary_cons,
+        reviews_hash = excluded.reviews_hash,
         updated_at = CURRENT_TIMESTAMP
     `).run(
       summary.gameId,
       summary.criticsSummaryPros,
       summary.criticsSummaryCons,
       summary.usersSummaryPros,
-      summary.usersSummaryCons
+      summary.usersSummaryCons,
+      summary.reviewsHash || null
     );
   }
 
@@ -407,5 +414,23 @@ export class SqliteDriver implements IGameRepository {
   async getRecentLogs(limit = 100): Promise<WorkerLog[]> {
     const db = this.getClient();
     return db.prepare('SELECT * FROM worker_logs ORDER BY id DESC LIMIT ?').all(limit) as WorkerLog[];
+  }
+
+  async pruneOldLogs(keepCount = 500): Promise<void> {
+    const db = this.getClient();
+    try {
+      db.prepare('DELETE FROM worker_logs WHERE id NOT IN (SELECT id FROM worker_logs ORDER BY id DESC LIMIT ?)').run(keepCount);
+    } catch (e: any) {
+      console.warn('[SqliteDriver] pruneOldLogs warning:', e.message);
+    }
+  }
+
+  async checkpointWal(): Promise<void> {
+    const db = this.getClient();
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (e: any) {
+      console.warn('[SqliteDriver] WAL checkpoint warning:', e.message);
+    }
   }
 }

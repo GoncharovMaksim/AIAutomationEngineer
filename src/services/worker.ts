@@ -1,8 +1,10 @@
 import { EventEmitter } from 'events';
+import crypto from 'crypto';
 import { metacriticScraper } from './metacritic.js';
 import { geminiService } from './gemini.js';
 import { youtubeService } from './youtube.js';
 import { gameRepository } from '../db/gameRepository.js';
+import { config } from '../config.js';
 
 export interface WorkerProgressEvent {
   status: 'idle' | 'running' | 'completed' | 'error';
@@ -46,6 +48,19 @@ export class CrawlWorker extends EventEmitter {
       });
       state = await gameRepository.getCrawlState();
     } else {
+      // Enforce daily scheduled crawl limit (bypassed if manually triggered via web UI)
+      if (!isManual && state.total_processed_today >= config.maxDailyCrawlGames) {
+        await this.log('info', `[Scheduler] 🛑 Плановый дневной лимит (${config.maxDailyCrawlGames} игр) достигнут. Ожидание следующего дня. (Для принудительного запуска используйте кнопку в веб-интерфейсе).`);
+        await gameRepository.updateCrawlState({
+          status: 'idle',
+          current_step: `Daily quota reached (${state.total_processed_today}/${config.maxDailyCrawlGames})`,
+          current_game: ''
+        });
+        await this.emitProgress('idle', '', `Daily limit reached (${state.total_processed_today}/${config.maxDailyCrawlGames})`, state.total_processed_today, config.maxDailyCrawlGames);
+        this.isRunning = false;
+        return false;
+      }
+
       await gameRepository.updateCrawlState({
         status: 'running',
         current_step: isManual ? 'Manual run started' : 'Hourly run started'
@@ -138,46 +153,63 @@ export class CrawlWorker extends EventEmitter {
           }
 
           const { gameInput, criticReviews, userReviews } = scraped;
-          await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+          const existingGame = await gameRepository.getGameById(gameInput.id);
 
-          // 2. Compute Embedding for Similar Games
-          const embeddingText = `${gameInput.title}. Developer: ${gameInput.developer}. Platforms: ${gameInput.platforms.map(p => p.platform).join(', ')}. ${gameInput.description || ''}`;
-          try {
-            const emb = await geminiService.getEmbedding(embeddingText);
-            if (emb) gameInput.embedding = emb;
-          } catch (embErr: any) {
-            await this.log('warn', `Embedding generation skipped for ${gameInput.title}: ${embErr.message}`);
+          // 2. Compute Embedding for Similar Games (reuse existing to save quota)
+          if (existingGame?.embedding) {
+            gameInput.embedding = existingGame.embedding;
+          } else {
+            const embeddingText = `${gameInput.title}. Developer: ${gameInput.developer}. Platforms: ${gameInput.platforms.map(p => p.platform).join(', ')}. ${gameInput.description || ''}`;
+            try {
+              const emb = await geminiService.getEmbedding(embeddingText);
+              if (emb) gameInput.embedding = emb;
+            } catch (embErr: any) {
+              await this.log('warn', `Embedding generation skipped for ${gameInput.title}: ${embErr.message}`);
+            }
           }
 
           // 3. Save / Update game in Database
           await gameRepository.upsertGame(gameInput);
           await this.log('success', `Saved game "${gameInput.title}" to database.`);
 
-          // 4. AI Summarize Critic and User Reviews
-          try {
-            const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
-            await gameRepository.upsertReviewsSummary({
-              gameId: gameInput.id,
-              criticsSummaryPros: reviewsSummary.criticsSummaryPros,
-              criticsSummaryCons: reviewsSummary.criticsSummaryCons,
-              usersSummaryPros: reviewsSummary.usersSummaryPros,
-              usersSummaryCons: reviewsSummary.usersSummaryCons
-            });
-            await this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
-          } catch (sumErr: any) {
-            await this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
+          // 4. AI Summarize Critic and User Reviews (deduplicate via review hash)
+          const reviewsPayload = `${criticReviews.join('||')}###${userReviews.join('||')}`;
+          const reviewsHash = crypto.createHash('sha256').update(reviewsPayload).digest('hex');
+
+          if (existingGame?.reviews && existingGame.reviews.reviews_hash === reviewsHash) {
+            await this.log('info', `Reviews for "${gameInput.title}" unchanged. Reusing cached AI summary (tokens saved).`);
+          } else {
+            await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+            try {
+              const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
+              await gameRepository.upsertReviewsSummary({
+                gameId: gameInput.id,
+                criticsSummaryPros: reviewsSummary.criticsSummaryPros,
+                criticsSummaryCons: reviewsSummary.criticsSummaryCons,
+                usersSummaryPros: reviewsSummary.usersSummaryPros,
+                usersSummaryCons: reviewsSummary.usersSummaryCons,
+                reviewsHash
+              });
+              await this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
+            } catch (sumErr: any) {
+              await this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
+            }
           }
 
-          // 5. Additional Part 1: YouTube Let's Play & Blogger Conclusion
-          await this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
-          try {
-            const youtubeResult = await youtubeService.findAndAnalyzeLetsPlay(gameInput.id, gameInput.title);
-            if (youtubeResult) {
-              await gameRepository.upsertYoutubeLetsplay(youtubeResult);
-              await this.log('success', `Found & analyzed YouTube Let's Play for "${gameInput.title}" (${youtubeResult.videoTitle}).`);
+          // 5. Additional Part 1: YouTube Let's Play & Blogger Conclusion (reuse if already analyzed)
+          if (existingGame?.youtube && existingGame.youtube.video_id) {
+            await this.log('info', `YouTube Let's Play for "${gameInput.title}" already analyzed. Preserving existing record.`);
+          } else {
+            await this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+            try {
+              const youtubeResult = await youtubeService.findAndAnalyzeLetsPlay(gameInput.id, gameInput.title);
+              if (youtubeResult) {
+                await gameRepository.upsertYoutubeLetsplay(youtubeResult);
+                await this.log('success', `Found & analyzed YouTube Let's Play for "${gameInput.title}" (${youtubeResult.videoTitle}).`);
+              }
+            } catch (ytErr: any) {
+              await this.log('warn', `YouTube processing error for "${gameInput.title}": ${ytErr.message}`);
             }
-          } catch (ytErr: any) {
-            await this.log('warn', `YouTube processing error for "${gameInput.title}": ${ytErr.message}`);
           }
 
           processedInThisRun++;
@@ -193,6 +225,14 @@ export class CrawlWorker extends EventEmitter {
         } catch (itemErr: any) {
           await this.log('error', `Error processing game at ${url}: ${itemErr.message}`);
         }
+      }
+
+      // Maintenance: rotate logs and checkpoint WAL to save disk space
+      try {
+        await gameRepository.pruneOldLogs(500);
+        await gameRepository.checkpointWal();
+      } catch (maintErr: any) {
+        console.warn('[Maintenance] DB maintenance warning:', maintErr.message);
       }
 
       await this.log('success', `Batch complete! Successfully processed ${processedInThisRun} games.`);

@@ -23,6 +23,7 @@ export interface ReviewsSummaryInput {
   criticsSummaryCons: string;
   usersSummaryPros: string;
   usersSummaryCons: string;
+  reviewsHash?: string;
 }
 
 export interface YoutubeLetsplayInput {
@@ -92,4 +93,6 @@ export interface IGameRepository {
 
   addWorkerLog(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string): Promise<void>;
   getRecentLogs(limit?: number): Promise<WorkerLog[]>;
+  pruneOldLogs(keepCount?: number): Promise<void>;
+  checkpointWal(): Promise<void>;
 }

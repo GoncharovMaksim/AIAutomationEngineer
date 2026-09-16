@@ -57,6 +57,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || '',
   adminSecret: process.env.ADMIN_SECRET || 'skytec-admin-2026',
   demoMaxFreeRuns: parseInt(process.env.DEMO_MAX_FREE_RUNS || '3', 10),
+  maxDailyCrawlGames: parseInt(process.env.MAX_DAILY_CRAWL_GAMES || '60', 10),
   proxies,
   // Returns a ProxyAgent with round-robin rotation if proxies are available
   getProxyAgent(): ProxyAgent | undefined {

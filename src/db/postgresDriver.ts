@@ -413,4 +413,17 @@ export class PostgresDriver implements IGameRepository {
     const res = await pool.query('SELECT * FROM worker_logs ORDER BY id DESC LIMIT $1', [limit]);
     return res.rows as WorkerLog[];
   }
+
+  async pruneOldLogs(keepCount = 500): Promise<void> {
+    const pool = this.getPool();
+    try {
+      await pool.query('DELETE FROM worker_logs WHERE id NOT IN (SELECT id FROM worker_logs ORDER BY id DESC LIMIT $1)', [keepCount]);
+    } catch (e: any) {
+      console.warn('[PostgresDriver] pruneOldLogs warning:', e.message);
+    }
+  }
+
+  async checkpointWal(): Promise<void> {
+    // No-op for PostgreSQL
+  }
 }
