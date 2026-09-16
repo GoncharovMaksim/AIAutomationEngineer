@@ -207,6 +207,18 @@ export function createApp() {
     });
   });
 
+  // Admin Restart endpoint (allows remote restart without SSH)
+  app.post('/api/admin/restart', (req, res) => {
+    if (!isAdmin(req)) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    res.json({ success: true, message: 'Server restarting...' });
+    setTimeout(() => {
+      console.log('[Server] Admin triggered reload. Exiting process for PM2 restart...');
+      process.exit(0);
+    }, 500);
+  });
+
   // Serve Frontend build in production if available
   const frontendDist = path.resolve(process.cwd(), 'frontend', 'dist');
   if (fs.existsSync(frontendDist)) {
