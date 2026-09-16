@@ -116,12 +116,15 @@ export class MetacriticScraper {
     let lastError: any;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       let page: Page | null = null;
+      const proxyUrl = config.getActiveProxyUrl();
       try {
         page = await this.createPage();
         const result = await action(page);
+        if (proxyUrl) config.markProxySuccess(proxyUrl);
         return result;
       } catch (err: any) {
         lastError = err;
+        if (proxyUrl) config.markProxyFailed(proxyUrl);
         console.warn(`[Metacritic] Page action failed (attempt ${attempt}/${maxRetries}): ${err.message}. Recycling browser & rotating proxy...`);
         config.rotateProxy();
         await this.close();

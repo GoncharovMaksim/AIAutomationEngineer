@@ -1,0 +1,8 @@
+cd /root/AIAutomationEngineer
+pm2 stop metacritic-ai
+rm -f data/*.db data/*.db-wal data/*.db-shm
+npm run build
+pm2 restart metacritic-ai --update-env
+sleep 3
+pm2 list
+pm2 logs metacritic-ai --lines 40 --nostream

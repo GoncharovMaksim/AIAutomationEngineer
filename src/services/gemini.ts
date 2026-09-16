@@ -79,10 +79,12 @@ class GeminiService {
         clearTimeout(timer);
 
         if (res.ok) {
+          config.markProxySuccess(p.url);
           return await res.json();
         }
         console.warn(`[Gemini] Proxy ${p.host} returned ${res.status}`);
       } catch (proxyErr: any) {
+        config.markProxyFailed(p.url);
         console.warn(`[Gemini] Proxy ${p.host} error:`, proxyErr.message);
       }
     }

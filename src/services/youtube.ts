@@ -7,10 +7,11 @@ import { config } from '../config.js';
 
 export class YouTubeService {
   async findAndAnalyzeLetsPlay(gameId: string, gameTitle: string): Promise<YoutubeLetsplayInput | null> {
+    let activeProxyUrl: string | undefined = undefined;
     try {
       const query = `${gameTitle} gameplay walkthrough lets play`;
       const proxyAgent = config.getProxyAgent();
-      const activeProxyUrl = config.getActiveProxyUrl();
+      activeProxyUrl = config.getActiveProxyUrl();
       if (proxyAgent) {
         console.log(`[YouTube] Searching via proxy (${activeProxyUrl}): "${query}"`);
       } else {
@@ -58,6 +59,10 @@ export class YouTubeService {
       console.log(`[YouTube] Generating AI blogger conclusion for "${gameTitle}"...`);
       const bloggerConclusion = await geminiService.summarizeBloggerVideo(gameTitle, transcriptText);
 
+      if (activeProxyUrl) {
+        config.markProxySuccess(activeProxyUrl);
+      }
+
       return {
         gameId,
         videoId,
@@ -69,6 +74,9 @@ export class YouTubeService {
         transcriptSample: transcriptText.slice(0, 500)
       };
     } catch (err: any) {
+      if (activeProxyUrl) {
+        config.markProxyFailed(activeProxyUrl);
+      }
       console.warn(`[YouTube] Live YouTube API unavailable for "${gameTitle}" (${err.message}). Generating AI Let's Play synthesis...`);
       try {
         const bloggerConclusion = await geminiService.summarizeBloggerVideo(

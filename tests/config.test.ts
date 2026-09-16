@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { parseProxyList } from '../src/config.js';
+import { parseProxyList, config } from '../src/config.js';
 
 describe('Config & Proxy Parsing', () => {
   it('returns empty array when proxy string is undefined or empty', () => {
@@ -33,5 +33,19 @@ describe('Config & Proxy Parsing', () => {
     assert.strictEqual(proxies[0].host, 'proxy1.com');
     assert.strictEqual(proxies[1].host, 'proxy2.com');
     assert.strictEqual(proxies[1].user, 'user');
+  });
+
+  it('marks proxy as failed with temporary cooldown and recovers', () => {
+    if (config.proxies.length > 0) {
+      const first = config.proxies[0];
+      config.markProxyFailed(first.url, 1000);
+      assert.ok(first.failedUntil && first.failedUntil > Date.now());
+      assert.strictEqual(first.consecutiveFailures, 1);
+
+      // mark success recovers it
+      config.markProxySuccess(first.url);
+      assert.strictEqual(first.failedUntil, 0);
+      assert.strictEqual(first.consecutiveFailures, 0);
+    }
   });
 });

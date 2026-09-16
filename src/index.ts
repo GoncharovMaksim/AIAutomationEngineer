@@ -25,8 +25,9 @@ async function bootstrap() {
   // 3. Setup WebSocket for real-time monitoring
   setupWebSocket(server);
 
-  // 4. Start cron hourly scheduler
+  // 4. Start cron hourly scheduler & proxy health monitoring
   startScheduler();
+  config.startProxyHealthChecker(60000);
 
   // 5. Start listening
   server.listen(config.port, () => {
