@@ -179,15 +179,29 @@ export class MetacriticScraper {
         const metascoreFromLd = ld?.aggregateRating?.ratingValue ? parseInt(ld.aggregateRating.ratingValue, 10) : null;
         const platformsList: string[] = Array.isArray(ld?.gamePlatform) ? ld.gamePlatform : (ld?.gamePlatform ? [ld.gamePlatform] : ['PC']);
 
-        // Look for userscore in DOM
+        // 1. Check for specific platform score cards in "All Platforms" section
+        const platformCards = Array.from(document.querySelectorAll('.product-score-card--platform')).map(card => {
+          const href = card.getAttribute('href') || '';
+          const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';
+          const scoreMatch = card.textContent?.match(/([0-9]{1,3})\s*$/) || card.textContent?.match(/Critic Reviews\s*([0-9]{1,3})/i);
+          const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
+          return {
+            platformParam,
+            score
+          };
+        }).filter(c => c.platformParam && c.score !== null);
+
+        // 2. Look for userscore in DOM
         let userscore: number | null = null;
-        const scoreEls = Array.from(document.querySelectorAll('[class*="userScore"], [class*="userscore"], [data-testid="userscore"]'));
-        for (const el of scoreEls) {
-          const text = el.textContent?.trim() || '';
-          const match = text.match(/\b([0-9](\.[0-9])?)\b/);
-          if (match && !isNaN(parseFloat(match[1]))) {
-            userscore = parseFloat(match[1]);
-            break;
+        const scoreWrappers = Array.from(document.querySelectorAll('[data-testid="global-score-wrapper"], [class*="productScoreInfo"], div'));
+        for (const w of scoreWrappers) {
+          const txt = w.textContent?.trim() || '';
+          if (txt.toLowerCase().includes('user score') && (txt.toLowerCase().includes('based on') || txt.toLowerCase().includes('rating'))) {
+            const match = txt.match(/([0-9]{1,2}\.[0-9])/);
+            if (match) {
+              userscore = parseFloat(match[1]);
+              break;
+            }
           }
         }
 
@@ -199,6 +213,7 @@ export class MetacriticScraper {
           developer,
           metascoreFromLd,
           platformsList,
+          platformCards,
           userscore
         };
       });
@@ -213,12 +228,51 @@ export class MetacriticScraper {
       const slug = slugMatch ? slugMatch[1].toLowerCase() : pageInfo.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const gameId = slug;
 
-      // Map platforms
-      const platforms: GamePlatformInput[] = pageInfo.platformsList.map(p => ({
-        platform: p,
-        metascore: pageInfo.metascoreFromLd,
-        userscore: pageInfo.userscore
-      }));
+      // Platform normalization helper
+      const formatPlatformName = (param: string): string => {
+        const p = param.toLowerCase();
+        if (p.includes('playstation-5') || p === 'ps5') return 'PlayStation 5';
+        if (p.includes('playstation-4') || p === 'ps4') return 'PlayStation 4';
+        if (p.includes('xbox-series')) return 'Xbox Series X';
+        if (p.includes('xbox-one')) return 'Xbox One';
+        if (p.includes('nintendo-switch-2') || p.includes('switch-2')) return 'Nintendo Switch 2';
+        if (p.includes('nintendo-switch') || p.includes('switch')) return 'Nintendo Switch';
+        if (p === 'pc') return 'PC';
+        return param;
+      };
+
+      // Map platforms with individual scores
+      const platforms: GamePlatformInput[] = [];
+
+      if (pageInfo.platformCards && pageInfo.platformCards.length > 0) {
+        for (const card of pageInfo.platformCards) {
+          platforms.push({
+            platform: formatPlatformName(card.platformParam),
+            metascore: card.score,
+            userscore: pageInfo.userscore
+          });
+        }
+      }
+
+      // If any platform from pageInfo.platformsList is missing in platforms, add it
+      for (const p of pageInfo.platformsList) {
+        const norm = formatPlatformName(p);
+        if (!platforms.some(item => item.platform.toLowerCase() === norm.toLowerCase())) {
+          platforms.push({
+            platform: norm,
+            metascore: pageInfo.metascoreFromLd,
+            userscore: pageInfo.userscore
+          });
+        }
+      }
+
+      if (platforms.length === 0) {
+        platforms.push({
+          platform: 'PC',
+          metascore: pageInfo.metascoreFromLd,
+          userscore: pageInfo.userscore
+        });
+      }
 
       // Scrape critic reviews
       const criticReviews = await this.scrapeReviewsSubpage(gameUrl, 'critic-reviews');
