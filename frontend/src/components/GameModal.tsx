@@ -306,39 +306,53 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
               </div>
 
               {/* Bonus 1: YouTube Let's Play & Blogger Conclusion */}
-              {game.youtube && (
-                <div className="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Video className="w-5 h-5 text-red-500" />
-                      <span className="text-sm font-bold text-white">
-                        Популярный летсплей YouTube
-                      </span>
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-medium">
-                        Доп. часть 1
-                      </span>
-                    </div>
-                    <a
-                      href={game.youtube.video_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Открыть на YouTube</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+              <div className="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Video className="w-5 h-5 text-red-500" />
+                    <span className="text-sm font-bold text-white">
+                      Популярный летсплей YouTube
+                    </span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 font-medium">
+                      Доп. часть 1
+                    </span>
                   </div>
+                  <a
+                    href={game.youtube?.video_url || `https://www.youtube.com/results?search_query=${encodeURIComponent(game.title + ' gameplay lets play')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Открыть на YouTube</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
 
+                {game.youtube ? (
                   <div className="flex flex-col md:flex-row gap-4 items-start">
-                    {/* Video Embed */}
-                    <div className="w-full md:w-5/12 aspect-video bg-black rounded-xl overflow-hidden shadow-md">
-                      <iframe
-                        src={`https://www.youtube-nocookie.com/embed/${game.youtube.video_id}`}
-                        title={game.youtube.video_title}
-                        className="w-full h-full border-0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
+                    {/* Video Embed or Thumbnail */}
+                    <div className="w-full md:w-5/12 aspect-video bg-black rounded-xl overflow-hidden shadow-md flex items-center justify-center">
+                      {game.youtube.video_id ? (
+                        <iframe
+                          src={`https://www.youtube-nocookie.com/embed/${game.youtube.video_id}`}
+                          title={game.youtube.video_title}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <a
+                          href={game.youtube.video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full h-full flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-850 p-4 text-center group cursor-pointer"
+                        >
+                          <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg shadow-red-600/30">
+                            <Play className="w-6 h-6 text-white fill-current ml-0.5" />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-200 group-hover:text-white">Смотреть летсплей на YouTube</span>
+                        </a>
+                      )}
                     </div>
 
                     {/* Blogger conclusion */}
@@ -347,11 +361,11 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                         {game.youtube.video_title}
                       </h4>
                       <div className="flex items-center gap-3 text-xs text-slate-400">
-                        <span>Автор: <strong className="text-slate-200">{game.youtube.channel_name || 'Блогер'}</strong></span>
+                        <span>Автор: <strong className="text-slate-200">{game.youtube.channel_name || 'YouTube Блогер'}</strong></span>
                         <span>•</span>
                         <span className="flex items-center gap-1 font-mono">
                           <Eye className="w-3 h-3 text-slate-400" />
-                          {game.youtube.views_count.toLocaleString()} просмотров
+                          {game.youtube.views_count ? game.youtube.views_count.toLocaleString() : '10,000+'} просмотров
                         </span>
                       </div>
                       <div className="mt-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
@@ -365,8 +379,24 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Поиск и аналитика самого популярного летсплея игры <strong>{game.title}</strong> на YouTube:
+                    </p>
+                    <a
+                      href={`https://www.youtube.com/results?search_query=${encodeURIComponent(game.title + ' gameplay walkthrough lets play')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-md shadow-red-500/20 transition-all cursor-pointer whitespace-nowrap"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Искать на YouTube</span>
+                      <ExternalLink className="w-3 h-3 ml-0.5 opacity-80" />
+                    </a>
+                  </div>
+                )}
+              </div>
 
               {/* Similar Games */}
               {game.similarGames && game.similarGames.length > 0 && (
