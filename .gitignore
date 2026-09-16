@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Production build
+dist/
+frontend/dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Puppeteer cache
+.cache/
+
+# SQLite DB (optional: keep empty or ignore local test db)
+data/*.db*
+!data/.gitkeep
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Chat logs for test review submission MUST be preserved
+!ai_chat_logs/
+!ai_chat_logs/*.jsonl

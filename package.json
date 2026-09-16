@@ -1,0 +1,39 @@
+{
+  "name": "aiautomationengineer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "build:all": "npm run build && npm run build:frontend"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.3",
+    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.18.1",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-cron": "^4.6.0",
+    "puppeteer": "^25.11.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "undici": "^8.10.2",
+    "ws": "^8.21.3",
+    "youtube-sr": "^4.3.12",
+    "youtube-transcript": "^1.3.1"
+  }
+}
