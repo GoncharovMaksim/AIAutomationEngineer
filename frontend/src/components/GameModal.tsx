@@ -99,40 +99,98 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
           </div>
         ) : (
           <div className="overflow-y-auto flex-1">
-            {/* Hero Header with Cover */}
-            <div className="relative aspect-[21/9] sm:aspect-[24/9] w-full bg-slate-950 overflow-hidden">
+            {/* Hero Header with Backdrop & Prominent Cover Art */}
+            <div className="relative w-full bg-slate-950 overflow-hidden border-b border-slate-800/80">
+              {/* Blurred Background Banner */}
               {game.cover_image && (
-                <img
-                  src={game.cover_image}
-                  alt={game.title}
-                  className="w-full h-full object-cover blur-sm opacity-40 scale-105"
-                />
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <img
+                    src={game.cover_image}
+                    alt=""
+                    aria-hidden="true"
+                    className="w-full h-full object-cover blur-xl opacity-25 scale-110 transform"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/80 to-transparent" />
+                </div>
               )}
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent" />
 
-              <div className="absolute bottom-4 left-6 right-6 flex flex-col sm:flex-row gap-4 items-start sm:items-end justify-between">
-                <div>
-                  <h1 id="game-modal-title" className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                    {game.title}
-                  </h1>
-                  <p className="text-sm text-amber-400/90 font-medium mt-1">
-                    Разработчик: <span className="text-slate-200">{game.developer || 'Не указан'}</span>
-                  </p>
+              {/* Main Game Header Info */}
+              <div className="relative p-6 flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                {/* Prominent Game Poster */}
+                <div className="relative w-28 sm:w-36 aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 bg-slate-950 flex-shrink-0 group">
+                  {game.cover_image ? (
+                    <img
+                      src={game.cover_image}
+                      alt={game.title}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80';
+                      }}
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-500 p-2 text-center">
+                      <Layers className="w-8 h-8 opacity-40 mb-1" />
+                      <span className="text-[10px]">Нет постера</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Video Trailer link if available */}
-                {game.video_url && (
-                  <a
-                    href={game.video_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-lg shadow-orange-500/20 transition-all cursor-pointer"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Смотреть трейлер</span>
-                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
-                  </a>
-                )}
+                {/* Title & Key Attributes */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      Metacritic Game
+                    </span>
+                    {game.platforms && game.platforms.length > 0 && (
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {game.platforms.length} {game.platforms.length === 1 ? 'платформа' : 'платформы'}
+                      </span>
+                    )}
+                  </div>
+
+                  <h1 id="game-modal-title" className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-snug">
+                    {game.title}
+                  </h1>
+
+                  <p className="text-sm text-slate-400">
+                    Разработчик:{' '}
+                    <strong className="text-slate-200 font-semibold">
+                      {game.developer || 'Не указан'}
+                    </strong>
+                  </p>
+
+                  {/* Actions & Links */}
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    {game.video_url ? (
+                      <a
+                        href={game.video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold shadow-lg shadow-orange-500/20 transition-all cursor-pointer"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Смотреть трейлер</span>
+                        <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 text-slate-400 text-xs border border-slate-700/50">
+                        <Video className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Трейлер не предоставлен</span>
+                      </span>
+                    )}
+
+                    <a
+                      href={`https://www.metacritic.com/game/${game.slug}/`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-slate-700 transition-all cursor-pointer"
+                    >
+                      <span>Открыть на Metacritic</span>
+                      <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
 

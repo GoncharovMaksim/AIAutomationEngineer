@@ -16,8 +16,14 @@ export interface ScrapedGameData {
 export class MetacriticScraper {
   private browser: Browser | null = null;
   private pagesOpenedCount = 0;
+  private fallbackToDirect = false;
 
-  private async getBrowser(): Promise<Browser> {
+  private async getBrowser(forceDirect = false): Promise<Browser> {
+    if (forceDirect && !this.fallbackToDirect) {
+      this.fallbackToDirect = true;
+      await this.close();
+    }
+
     // Re-create browser if closed or after 10 page navigations to free memory
     if (this.browser && (!this.browser.connected || this.pagesOpenedCount >= 10)) {
       await this.close();
@@ -37,12 +43,14 @@ export class MetacriticScraper {
         ]
       };
 
-      const proxy = config.getActiveProxyUrl();
-      if (proxy) {
-        try {
-          const u = new URL(proxy);
-          launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
-        } catch {}
+      if (!this.fallbackToDirect) {
+        const proxy = config.getActiveProxyUrl();
+        if (proxy) {
+          try {
+            const u = new URL(proxy);
+            launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
+          } catch {}
+        }
       }
 
       if (config.executablePath) {
@@ -59,21 +67,23 @@ export class MetacriticScraper {
     while (attempts < 2) {
       try {
         attempts++;
-        const browser = await this.getBrowser();
+        const browser = await this.getBrowser(attempts > 1);
         const page = await browser.newPage();
         this.pagesOpenedCount++;
 
-        const proxy = config.getActiveProxyUrl();
-        if (proxy) {
-          try {
-            const u = new URL(proxy);
-            if (u.username && u.password) {
-              await page.authenticate({
-                username: decodeURIComponent(u.username),
-                password: decodeURIComponent(u.password)
-              });
-            }
-          } catch {}
+        if (!this.fallbackToDirect) {
+          const proxy = config.getActiveProxyUrl();
+          if (proxy) {
+            try {
+              const u = new URL(proxy);
+              if (u.username && u.password) {
+                await page.authenticate({
+                  username: decodeURIComponent(u.username),
+                  password: decodeURIComponent(u.password)
+                });
+              }
+            } catch {}
+          }
         }
 
         await page.setUserAgent(

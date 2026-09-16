@@ -11,7 +11,7 @@ import type {
   WorkerLog,
   WorkerProgressPayload
 } from './types';
-import { Gamepad2, Sparkles, AlertTriangle, CheckCircle2, XCircle, Info, X } from 'lucide-react';
+import { Gamepad2, Sparkles, AlertTriangle, CheckCircle2, XCircle, Info, X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export function App() {
   const [games, setGames] = useState<GameItem[]>([]);
@@ -23,6 +23,10 @@ export function App() {
   const [selectedPlatform, setSelectedPlatform] = useState('');
   const [availablePlatforms, setAvailablePlatforms] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'recent' | 'metascore' | 'userscore' | 'title'>('recent');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
 
   // Modal states
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
@@ -86,6 +90,11 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  }, [search, selectedPlatform, sortBy]);
+
+  // Reset to first page when search, platform or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
   }, [search, selectedPlatform, sortBy]);
 
   // Load Platforms
@@ -305,15 +314,103 @@ export function App() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {games.map((game) => (
-              <GameCard
-                key={game.id}
-                game={game}
-                onClick={() => setSelectedGameId(game.id)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+              {games
+                .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                .map((game) => (
+                  <GameCard
+                    key={game.id}
+                    game={game}
+                    onClick={() => setSelectedGameId(game.id)}
+                  />
+                ))}
+            </div>
+
+            {/* Pagination Controls */}
+            {games.length > pageSize && (
+              <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+                <div className="text-xs text-slate-400">
+                  Показано <strong className="text-slate-200">{(currentPage - 1) * pageSize + 1}</strong>–<strong className="text-slate-200">{Math.min(currentPage * pageSize, games.length)}</strong> из <strong className="text-slate-200">{games.length}</strong> игр
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setCurrentPage(p => Math.max(1, p - 1));
+                      window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === 1}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 transition-colors cursor-pointer"
+                    title="Предыдущая страница"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.ceil(games.length / pageSize) }, (_, i) => i + 1).map(page => {
+                      const totalPages = Math.ceil(games.length / pageSize);
+                      if (
+                        page === 1 ||
+                        page === totalPages ||
+                        (page >= currentPage - 1 && page <= currentPage + 1)
+                      ) {
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => {
+                              setCurrentPage(page);
+                              window.scrollTo({ top: 400, behavior: 'smooth' });
+                            }}
+                            className={`min-w-[36px] h-9 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              currentPage === page
+                                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        );
+                      }
+                      if (page === currentPage - 2 || page === currentPage + 2) {
+                        return <span key={page} className="text-slate-500 text-xs px-1">...</span>;
+                      }
+                      return null;
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setCurrentPage(p => Math.min(Math.ceil(games.length / pageSize), p + 1));
+                      window.scrollTo({ top: 400, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === Math.ceil(games.length / pageSize)}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 transition-colors cursor-pointer"
+                    title="Следующая страница"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span>Показывать по:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="bg-slate-800 border border-slate-700 text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
+                  >
+                    <option value={8}>8</option>
+                    <option value={12}>12</option>
+                    <option value={20}>20</option>
+                    <option value={40}>40</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </main>
 
