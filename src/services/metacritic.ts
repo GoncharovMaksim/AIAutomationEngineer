@@ -27,7 +27,7 @@ export class MetacriticScraper {
       this.pagesOpenedCount = 0;
       const launchOptions: any = {
         headless: config.headless,
-        protocolTimeout: 120_000,
+        protocolTimeout: 180_000,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -115,8 +115,14 @@ export class MetacriticScraper {
       });
 
       const urls = await page.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll('a'));
+        // Target specifically the New Releases carousel section
+        const headings = Array.from(document.querySelectorAll('h2, h3, div, span'));
+        const nrHeading = headings.find(h => h.textContent?.trim().toLowerCase() === 'new releases');
+        const carousel = nrHeading?.closest('.global-carousel');
+        const anchors = carousel ? Array.from(carousel.querySelectorAll('a')) : Array.from(document.querySelectorAll('a'));
+
         const found = new Set<string>();
+        const blacklist = ['all', 'pc', 'ps5', 'ps4', 'xbox-series-x', 'xbox-one', 'nintendo-switch', 'news', 'features'];
 
         for (const a of anchors) {
           const href = a.getAttribute('href') || '';
@@ -124,7 +130,6 @@ export class MetacriticScraper {
           const match = href.match(/^\/game\/([a-z0-9-]+)\/?$/i);
           if (match) {
             const slug = match[1].toLowerCase();
-            const blacklist = ['all', 'pc', 'ps5', 'ps4', 'xbox-series-x', 'xbox-one', 'nintendo-switch', 'news', 'features'];
             if (!blacklist.includes(slug)) {
               found.add(`https://www.metacritic.com/game/${slug}/`);
             }
@@ -141,12 +146,12 @@ export class MetacriticScraper {
   }
 
   /**
-   * 2. Get game URLs from SEE ALL page: https://www.metacritic.com/browse/game/all/all-time/new/?page=N
+   * 2. Get game URLs from SEE ALL page: https://www.metacritic.com/browse/game/all/all/all-time/new/?page=N
    */
   async getSeeAllPageUrls(pageNumber: number): Promise<string[]> {
     const page = await this.createPage();
     try {
-      const url = `https://www.metacritic.com/browse/game/all/all-time/new/?page=${pageNumber}`;
+      const url = `https://www.metacritic.com/browse/game/all/all/all-time/new/?page=${pageNumber}`;
       console.log(`[Metacritic] Fetching SEE ALL page ${pageNumber} from ${url} ...`);
       await page.goto(url, {
         waitUntil: 'domcontentloaded',
@@ -156,13 +161,13 @@ export class MetacriticScraper {
       const urls = await page.evaluate(() => {
         const anchors = Array.from(document.querySelectorAll('a'));
         const found = new Set<string>();
+        const blacklist = ['all', 'pc', 'ps5', 'ps4', 'xbox-series-x', 'xbox-one', 'nintendo-switch', 'news', 'features'];
 
         for (const a of anchors) {
           const href = a.getAttribute('href') || '';
           const match = href.match(/^\/game\/([a-z0-9-]+)\/?$/i);
           if (match) {
             const slug = match[1].toLowerCase();
-            const blacklist = ['all', 'pc', 'ps5', 'ps4', 'xbox-series-x', 'xbox-one', 'nintendo-switch', 'news', 'features'];
             if (!blacklist.includes(slug)) {
               found.add(`https://www.metacritic.com/game/${slug}/`);
             }
