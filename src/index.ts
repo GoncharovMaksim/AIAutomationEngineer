@@ -1,5 +1,5 @@
 import http from 'http';
-import { config } from './config.js';
+import { config, validateConfig } from './config.js';
 import { initDatabase } from './db/database.js';
 import { createApp } from './server/app.js';
 import { setupWebSocket } from './server/ws.js';
@@ -9,6 +9,9 @@ async function bootstrap() {
   console.log('--- Metacritic AI Game Analyzer Server ---');
   console.log(`Node environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Port: ${config.port}`);
+
+  // Validate environment variables
+  validateConfig();
 
   // 1. Initialize SQLite schema
   initDatabase();

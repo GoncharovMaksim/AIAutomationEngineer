@@ -10,7 +10,7 @@ import type {
   WorkerLog,
   WorkerProgressPayload
 } from './types';
-import { Gamepad2, Sparkles, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Gamepad2, Sparkles, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Info, X } from 'lucide-react';
 
 export function App() {
   const [games, setGames] = useState<GameItem[]>([]);
@@ -32,6 +32,16 @@ export function App() {
   const [progress, setProgress] = useState<WorkerProgressPayload | null>(null);
   const [logs, setLogs] = useState<WorkerLog[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Toast notification state
+  const [toast, setToast] = useState<{ type: 'info' | 'error' | 'success'; message: string } | null>(null);
+
+  const showToast = useCallback((type: 'info' | 'error' | 'success', message: string) => {
+    setToast({ type, message });
+    setTimeout(() => {
+      setToast(curr => (curr?.message === message ? null : curr));
+    }, 4000);
+  }, []);
 
   // Load Games
   const fetchGames = useCallback(async () => {
@@ -143,13 +153,14 @@ export function App() {
       const res = await fetch('/api/worker/run', { method: 'POST' });
       const json = await res.json();
       if (!json.success) {
-        alert(json.message || 'Ошибка запуска воркера');
+        showToast('error', json.message || 'Ошибка запуска воркера');
         setIsRunning(false);
       } else {
+        showToast('success', 'Воркер сбора данных успешно запущен!');
         setIsMonitorOpen(true);
       }
     } catch (err: any) {
-      alert(`Ошибка запроса: ${err.message}`);
+      showToast('error', `Ошибка сетевого запроса: ${err.message}`);
       setIsRunning(false);
     }
   };
@@ -287,6 +298,30 @@ export function App() {
         totalGames={games.length}
         onForceRun={handleForceRun}
       />
+
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md border transition-all duration-300 max-w-md ${
+            toast.type === 'error'
+              ? 'bg-rose-950/90 border-rose-500/50 text-rose-200'
+              : toast.type === 'success'
+              ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200'
+              : 'bg-slate-900/90 border-slate-700 text-slate-200'
+          }`}
+        >
+          {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-400 shrink-0" />}
+          {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+          {toast.type === 'info' && <Info className="w-5 h-5 text-amber-400 shrink-0" />}
+          <span className="text-sm font-medium">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

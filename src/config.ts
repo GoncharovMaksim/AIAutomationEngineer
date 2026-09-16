@@ -46,6 +46,8 @@ export function parseProxyList(proxyListStr?: string): ProxyInfo[] {
 
 const proxies = parseProxyList(process.env.PROXY_LIST);
 
+let currentProxyIndex = 0;
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   geminiApiKey: process.env.GEMINI_API_KEY || '',
@@ -53,16 +55,34 @@ export const config = {
   executablePath: process.env.EXECUTABLE_PATH || undefined,
   dbPath: process.env.DB_PATH || path.resolve(process.cwd(), 'data', 'metacritic_games.db'),
   proxies,
-  // Returns a ProxyAgent if proxies are available
+  // Returns a ProxyAgent with round-robin rotation if proxies are available
   getProxyAgent(): ProxyAgent | undefined {
     if (proxies.length > 0) {
-      // Pick first proxy (or rotate)
-      return new ProxyAgent(proxies[0].url);
+      const selectedProxy = proxies[currentProxyIndex % proxies.length];
+      currentProxyIndex++;
+      return new ProxyAgent(selectedProxy.url);
     }
     return undefined;
   },
-  // Get active proxy URL for puppeteer args if needed
+  // Get active proxy URL with round-robin rotation
   getActiveProxyUrl(): string | undefined {
-    return proxies.length > 0 ? proxies[0].url : undefined;
+    if (proxies.length > 0) {
+      return proxies[currentProxyIndex % proxies.length].url;
+    }
+    return undefined;
   }
 };
+
+export function validateConfig() {
+  if (!config.geminiApiKey || config.geminiApiKey === 'your_gemini_api_key_here') {
+    console.warn('[Config] ⚠️ WARNING: GEMINI_API_KEY is not configured or still set to placeholder in .env!');
+  } else {
+    console.log('[Config] ✅ GEMINI_API_KEY is present.');
+  }
+
+  if (proxies.length > 0) {
+    console.log(`[Config] ✅ Configured ${proxies.length} proxy/proxies with round-robin rotation.`);
+  } else {
+    console.log('[Config] ℹ️ No proxies configured. Direct connections will be used.');
+  }
+}

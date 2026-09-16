@@ -61,7 +61,7 @@
 
 1. Клонируйте репозиторий:
    ```bash
-   git clone <url-репозитория>
+   git clone https://github.com/GoncharovMaksim/AIAutomationEngineer.git
    cd AIAutomationEngineer
    ```
 
@@ -91,6 +91,16 @@
 
 5. Откройте приложение в браузере:
    **[http://localhost:3001](http://localhost:3001)**
+
+---
+
+### Запуск тестов (Unit Tests)
+
+Запуск набора тестов (проверка парсинга прокси, логики суточной ротации и расчета косинусного сходства векторов):
+
+```bash
+npm test
+```
 
 ---
 

@@ -157,7 +157,10 @@ export class MetacriticScraper {
 
         const title = ld?.name || document.querySelector('h1')?.textContent?.trim() || '';
         const description = ld?.description || document.querySelector('.c-productDetails_description, [class*="description"]')?.textContent?.trim() || '';
-        const coverImage = ld?.image || (document.querySelector('img[src*="catalog"], img[src*="hub"], .c-productHero_image img') as HTMLImageElement)?.src || '';
+        const coverImage = ld?.image ||
+          document.querySelector('meta[property="og:image"]')?.getAttribute('content') ||
+          document.querySelector('meta[name="twitter:image"]')?.getAttribute('content') ||
+          (document.querySelector('img[src*="catalog"], img[src*="hub"], .c-productHero_image img') as HTMLImageElement)?.src || '';
 
         // Video URL (trailer)
         let videoUrl = ld?.trailer?.embedUrl || ld?.trailer?.contentUrl || '';

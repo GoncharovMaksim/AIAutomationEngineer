@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "tsx --test tests/**/*.test.ts",
     "build": "tsc",
     "build:frontend": "cd frontend && npm install && npm run build",
     "build:all": "npm run build && npm run build:frontend"
