@@ -112,16 +112,40 @@ export class MetacriticScraper {
     throw new Error('[Metacritic] Could not create page after recycling browser.');
   }
 
+  private async withPageRetry<T>(action: (page: Page) => Promise<T>, maxRetries = 3): Promise<T> {
+    let lastError: any;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      let page: Page | null = null;
+      try {
+        page = await this.createPage();
+        const result = await action(page);
+        return result;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Metacritic] Page action failed (attempt ${attempt}/${maxRetries}): ${err.message}. Recycling browser & rotating proxy...`);
+        config.rotateProxy();
+        await this.close();
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      } finally {
+        if (page) {
+          await page.close().catch(() => {});
+        }
+      }
+    }
+    throw lastError;
+  }
+
   /**
    * 1. Get initial 20 game URLs from https://www.metacritic.com/game/
    */
   async getNewReleasesUrls(): Promise<string[]> {
-    const page = await this.createPage();
-    try {
+    return this.withPageRetry(async (page) => {
       console.log('[Metacritic] Fetching New Releases from https://www.metacritic.com/game/ ...');
       await page.goto('https://www.metacritic.com/game/', {
         waitUntil: 'domcontentloaded',
-        timeout: 40000
+        timeout: 45000
       });
 
       const urls = await page.evaluate(() => {
@@ -150,22 +174,19 @@ export class MetacriticScraper {
 
       console.log(`[Metacritic] Discovered ${urls.length} games on /game/ page`);
       return urls;
-    } finally {
-      await page.close().catch(() => {});
-    }
+    });
   }
 
   /**
    * 2. Get game URLs from SEE ALL page: https://www.metacritic.com/browse/game/all/all/all-time/new/?page=N
    */
   async getSeeAllPageUrls(pageNumber: number): Promise<string[]> {
-    const page = await this.createPage();
-    try {
+    return this.withPageRetry(async (page) => {
       const url = `https://www.metacritic.com/browse/game/all/all/all-time/new/?page=${pageNumber}`;
       console.log(`[Metacritic] Fetching SEE ALL page ${pageNumber} from ${url} ...`);
       await page.goto(url, {
         waitUntil: 'domcontentloaded',
-        timeout: 40000
+        timeout: 45000
       });
 
       const urls = await page.evaluate(() => {
@@ -188,9 +209,7 @@ export class MetacriticScraper {
 
       console.log(`[Metacritic] Discovered ${urls.length} games on SEE ALL page ${pageNumber}`);
       return urls;
-    } finally {
-      await page.close().catch(() => {});
-    }
+    });
   }
 
   /**
@@ -199,10 +218,10 @@ export class MetacriticScraper {
   async scrapeGameDetails(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> { return this.scrapeGamePage(gameUrl, todayDate); }
 
   async scrapeGamePage(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> {
-    const page = await this.createPage();
     try {
-      console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
-      await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
+      return await this.withPageRetry(async (page) => {
+        console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
+        await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
 
       // Extract JSON-LD and page DOM info
       const pageInfo = await page.evaluate(() => {
@@ -356,13 +375,12 @@ export class MetacriticScraper {
         criticReviews,
         userReviews
       };
-    } catch (err: any) {
-      console.error(`[Metacritic] Error scraping ${gameUrl}:`, err.message);
-      return null;
-    } finally {
-      await page.close().catch(() => {});
-    }
+    }, 2);
+  } catch (err: any) {
+    console.error(`[Metacritic] Error scraping ${gameUrl}:`, err.message);
+    return null;
   }
+}
 
   /**
    * Helper to scrape quotes from critic-reviews or user-reviews subpages

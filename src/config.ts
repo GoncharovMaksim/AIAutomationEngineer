@@ -68,6 +68,11 @@ export const config = {
     }
     return undefined;
   },
+  rotateProxy(): void {
+    if (proxies.length > 0) {
+      currentProxyIndex = (currentProxyIndex + 1) % proxies.length;
+    }
+  },
   // Get active proxy URL with round-robin rotation
   getActiveProxyUrl(): string | undefined {
     if (proxies.length > 0) {
