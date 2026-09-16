@@ -15,11 +15,19 @@ export interface ScrapedGameData {
 
 export class MetacriticScraper {
   private browser: Browser | null = null;
+  private pagesOpenedCount = 0;
 
   private async getBrowser(): Promise<Browser> {
+    // Re-create browser if closed or after 10 page navigations to free memory
+    if (this.browser && (!this.browser.connected || this.pagesOpenedCount >= 10)) {
+      await this.close();
+    }
+
     if (!this.browser || !this.browser.connected) {
+      this.pagesOpenedCount = 0;
       const launchOptions: any = {
         headless: config.headless,
+        protocolTimeout: 120_000,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -47,39 +55,51 @@ export class MetacriticScraper {
   }
 
   private async createPage(): Promise<Page> {
-    const browser = await this.getBrowser();
-    const page = await browser.newPage();
-
-    const proxy = config.getActiveProxyUrl();
-    if (proxy) {
+    let attempts = 0;
+    while (attempts < 2) {
       try {
-        const u = new URL(proxy);
-        if (u.username && u.password) {
-          await page.authenticate({
-            username: decodeURIComponent(u.username),
-            password: decodeURIComponent(u.password)
-          });
+        attempts++;
+        const browser = await this.getBrowser();
+        const page = await browser.newPage();
+        this.pagesOpenedCount++;
+
+        const proxy = config.getActiveProxyUrl();
+        if (proxy) {
+          try {
+            const u = new URL(proxy);
+            if (u.username && u.password) {
+              await page.authenticate({
+                username: decodeURIComponent(u.username),
+                password: decodeURIComponent(u.password)
+              });
+            }
+          } catch {}
         }
-      } catch {}
-    }
 
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    );
-    await page.setViewport({ width: 1280, height: 800 });
+        await page.setUserAgent(
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        );
+        await page.setViewport({ width: 1280, height: 800 });
 
-    // Block images, fonts and media to save bandwidth and speed up page load
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['font', 'media'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
+        // Block images, fonts and media to save bandwidth and speed up page load
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          const type = req.resourceType();
+          if (['font', 'media'].includes(type)) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
+
+        return page;
+      } catch (err: any) {
+        console.warn(`[Metacritic] createPage failed (attempt ${attempts}): ${err.message}. Recycling browser...`);
+        await this.close();
+        if (attempts >= 2) throw err;
       }
-    });
-
-    return page;
+    }
+    throw new Error('[Metacritic] Could not create page after recycling browser.');
   }
 
   /**
@@ -116,7 +136,7 @@ export class MetacriticScraper {
       console.log(`[Metacritic] Discovered ${urls.length} games on /game/ page`);
       return urls;
     } finally {
-      await page.close();
+      await page.close().catch(() => {});
     }
   }
 
@@ -154,7 +174,7 @@ export class MetacriticScraper {
       console.log(`[Metacritic] Discovered ${urls.length} games on SEE ALL page ${pageNumber}`);
       return urls;
     } finally {
-      await page.close();
+      await page.close().catch(() => {});
     }
   }
 
@@ -325,7 +345,7 @@ export class MetacriticScraper {
       console.error(`[Metacritic] Error scraping ${gameUrl}:`, err.message);
       return null;
     } finally {
-      await page.close();
+      await page.close().catch(() => {});
     }
   }
 
@@ -358,7 +378,7 @@ export class MetacriticScraper {
     } catch {
       return [];
     } finally {
-      await page.close();
+      await page.close().catch(() => {});
     }
   }
 
@@ -368,6 +388,7 @@ export class MetacriticScraper {
         await this.browser.close();
       } catch {}
       this.browser = null;
+      this.pagesOpenedCount = 0;
     }
   }
 }
