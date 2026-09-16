@@ -3,14 +3,26 @@ const YouTube = (youtubeSr as any).default || youtubeSr;
 import { YoutubeTranscript } from 'youtube-transcript';
 import { geminiService } from './gemini.js';
 import { YoutubeLetsplayInput } from '../db/gameRepository.js';
+import { config } from '../config.js';
 
 export class YouTubeService {
   async findAndAnalyzeLetsPlay(gameId: string, gameTitle: string): Promise<YoutubeLetsplayInput | null> {
     try {
       const query = `${gameTitle} gameplay walkthrough lets play`;
-      console.log(`[YouTube] Searching for: "${query}"`);
+      const proxyAgent = config.getProxyAgent();
+      const activeProxyUrl = config.getActiveProxyUrl();
+      if (proxyAgent) {
+        console.log(`[YouTube] Searching via proxy (${activeProxyUrl}): "${query}"`);
+      } else {
+        console.log(`[YouTube] Searching (direct connection): "${query}"`);
+      }
 
-      const searchResults = await YouTube.search(query, { limit: 10, type: 'video' });
+      const requestOptions = proxyAgent ? { dispatcher: proxyAgent } : {};
+      const searchResults = await YouTube.search(query, { 
+        limit: 10, 
+        type: 'video',
+        requestOptions: requestOptions as any
+      });
       if (!searchResults || searchResults.length === 0) {
         console.warn(`[YouTube] No videos found for "${gameTitle}"`);
         return null;
@@ -28,7 +40,13 @@ export class YouTubeService {
 
       let transcriptText = '';
       try {
-        const transcriptEntries = await YoutubeTranscript.fetchTranscript(videoId);
+        const transcriptFetch = proxyAgent
+          ? (url: string | URL | Request, init?: any) => fetch(url, { ...init, dispatcher: proxyAgent })
+          : fetch;
+
+        const transcriptEntries = await YoutubeTranscript.fetchTranscript(videoId, {
+          fetch: transcriptFetch as any
+        });
         transcriptText = transcriptEntries.map((t: any) => t.text).join(' ');
         console.log(`[YouTube] Extracted transcript (${transcriptText.length} chars) for video ${videoId}`);
       } catch (transcriptErr: any) {
