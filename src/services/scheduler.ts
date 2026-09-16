@@ -12,13 +12,15 @@ export function startScheduler() {
   });
 
   // Check if database has 0 games on startup, and trigger initial run automatically if idle
-  const allGames = gameRepository.getAllGames();
-  if (allGames.length === 0) {
-    console.log('[Scheduler] Database is empty on startup. Triggering initial 20 games crawl...');
-    setTimeout(() => {
-      crawlWorker.runJob(false).catch(err => {
-        console.error('[Scheduler] Initial crawl failed:', err);
-      });
-    }, 2000);
-  }
+  setTimeout(async () => {
+    try {
+      const allGames = await gameRepository.getAllGames({ limit: 1 });
+      if (allGames.length === 0) {
+        console.log('[Scheduler] Database is empty on startup. Triggering initial 20 games crawl...');
+        await crawlWorker.runJob(false);
+      }
+    } catch (err) {
+      console.error('[Scheduler] Initial crawl check failed:', err);
+    }
+  }, 2000);
 }

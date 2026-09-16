@@ -54,6 +54,9 @@ export const config = {
   headless: process.env.HEADLESS !== 'false',
   executablePath: process.env.EXECUTABLE_PATH || undefined,
   dbPath: process.env.DB_PATH || path.resolve(process.cwd(), 'data', 'metacritic_games.db'),
+  databaseUrl: process.env.DATABASE_URL || '',
+  adminSecret: process.env.ADMIN_SECRET || 'skytec-admin-2026',
+  demoMaxFreeRuns: parseInt(process.env.DEMO_MAX_FREE_RUNS || '3', 10),
   proxies,
   // Returns a ProxyAgent with round-robin rotation if proxies are available
   getProxyAgent(): ProxyAgent | undefined {

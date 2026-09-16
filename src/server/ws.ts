@@ -3,8 +3,11 @@ import { Server } from 'http';
 import { crawlWorker, WorkerProgressEvent } from '../services/worker.js';
 import { gameRepository } from '../db/gameRepository.js';
 
-export function setupWebSocket(server: Server) {
+let activeWss: WebSocketServer | null = null;
+
+export function setupWebSocket(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
+  activeWss = wss;
 
   function broadcast(type: string, data: any) {
     const payload = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
@@ -15,19 +18,23 @@ export function setupWebSocket(server: Server) {
     }
   }
 
-  wss.on('connection', (ws: WebSocket) => {
-    // Send initial status and recent logs
-    const state = gameRepository.getCrawlState();
-    const recentLogs = gameRepository.getRecentLogs(50);
+  wss.on('connection', async (ws: WebSocket) => {
+    try {
+      // Send initial status and recent logs
+      const state = await gameRepository.getCrawlState();
+      const recentLogs = await gameRepository.getRecentLogs(50);
 
-    ws.send(JSON.stringify({
-      type: 'init',
-      data: {
-        state,
-        isRunning: crawlWorker.running,
-        logs: recentLogs.reverse()
-      }
-    }));
+      ws.send(JSON.stringify({
+        type: 'init',
+        data: {
+          state,
+          isRunning: crawlWorker.running,
+          logs: recentLogs.reverse()
+        }
+      }));
+    } catch (err) {
+      console.error('[WebSocket] Error sending initial state:', err);
+    }
   });
 
   // Forward worker events
@@ -41,4 +48,19 @@ export function setupWebSocket(server: Server) {
 
   console.log('[WebSocket] Real-time WebSocket server initialized on /ws');
   return wss;
+}
+
+export function closeWebSocketServer(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!activeWss) return resolve();
+    for (const client of activeWss.clients) {
+      try {
+        client.terminate();
+      } catch {}
+    }
+    activeWss.close(() => {
+      activeWss = null;
+      resolve();
+    });
+  });
 }

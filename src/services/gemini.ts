@@ -18,31 +18,49 @@ class GeminiService {
     this.apiKey = config.geminiApiKey;
   }
 
+  private async sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   /**
-   * Resilient HTTP post to Gemini API: tries direct first, falls back to proxy if direct fails
+   * Resilient HTTP post to Gemini API:
+   * - Retries with exponential backoff on 429/5xx
+   * - Falls back to proxies in round-robin if direct connection fails
    */
   private async postJson(endpoint: string, payload: any): Promise<any> {
     const url = `https://generativelanguage.googleapis.com/v1beta/${endpoint}?key=${this.apiKey}`;
     const bodyStr = JSON.stringify(payload);
 
-    // 1. Try direct call first with 12s timeout
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: bodyStr,
-        signal: controller.signal
-      });
-      clearTimeout(timer);
+    // 1. Try direct call first with retry for rate limits (up to 2 retries)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyStr,
+          signal: controller.signal
+        });
+        clearTimeout(timer);
 
-      if (res.ok) {
-        return await res.json();
+        if (res.ok) {
+          return await res.json();
+        }
+
+        if (res.status === 429 || res.status >= 500) {
+          const delay = 1000 * Math.pow(2, attempt) + Math.random() * 300;
+          console.warn(`[Gemini] HTTP ${res.status} on attempt ${attempt + 1}. Backing off for ${Math.round(delay)}ms...`);
+          await this.sleep(delay);
+          continue;
+        }
+
+        console.warn(`[Gemini] Direct call returned ${res.status}: ${res.statusText}. Will try proxy...`);
+        break;
+      } catch (err: any) {
+        console.warn(`[Gemini] Direct call attempt ${attempt + 1} failed (${err.message}).`);
+        if (attempt < 2) await this.sleep(1000);
       }
-      console.warn(`[Gemini] Direct call returned ${res.status}: ${res.statusText}. Will try proxy...`);
-    } catch (err: any) {
-      console.warn(`[Gemini] Direct call failed (${err.message}). Trying proxy...`);
     }
 
     // 2. Try proxy if available
@@ -69,11 +87,12 @@ class GeminiService {
       }
     }
 
-    throw new Error('All Gemini API attempts (direct and proxies) failed.');
+    throw new Error('All Gemini API attempts (direct with retry and proxies) failed.');
   }
 
   /**
    * Summarize reviews for a game (critics & users, pros & cons)
+   * Uses Gemini Structured Outputs (responseSchema) for guaranteed JSON formatting
    */
   async summarizeReviews(
     gameTitle: string,
@@ -113,27 +132,39 @@ class GeminiService {
 ${hasCritics ? criticsSample : 'Отзывы критиков отсутствуют (укажи в блоках критиков, что отзывы пока отсутствуют).'}
 
 Отзывы игроков:
-${hasUsers ? usersSample : 'Отзывы игроков отсутствуют (укажи в блоках игроков, что отзывы пользователей пока отсутствуют).'}
+${hasUsers ? usersSample : 'Отзывы игроков отсутствуют (укажи в блоках игроков, что отзывы пользователей пока отсутствуют).'}`;
 
-Ответь СТРОГО в формате JSON:
-{
-  "critics_summary_pros": "краткое резюме плюсов по мнению критиков на русском языке",
-  "critics_summary_cons": "краткое резюме минусов по мнению критиков на русском языке",
-  "users_summary_pros": "краткое резюме плюсов по мнению игроков на русском языке",
-  "users_summary_cons": "краткое резюме минусов по мнению игроков на русском языке"
-}`;
+    const structuredGenerationConfig = {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          critics_summary_pros: { type: 'STRING' },
+          critics_summary_cons: { type: 'STRING' },
+          users_summary_pros: { type: 'STRING' },
+          users_summary_cons: { type: 'STRING' }
+        },
+        required: [
+          'critics_summary_pros',
+          'critics_summary_cons',
+          'users_summary_pros',
+          'users_summary_cons'
+        ]
+      },
+      temperature: 0.3
+    };
 
     let data: any;
     try {
       data = await this.postJson(`models/${this.primaryModel}:generateContent`, {
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.3 }
+        generationConfig: structuredGenerationConfig
       });
     } catch {
       // Fallback model
       data = await this.postJson(`models/${this.fallbackModel}:generateContent`, {
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.3 }
+        generationConfig: structuredGenerationConfig
       });
     }
 

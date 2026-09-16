@@ -3,7 +3,6 @@ import { metacriticScraper } from './metacritic.js';
 import { geminiService } from './gemini.js';
 import { youtubeService } from './youtube.js';
 import { gameRepository } from '../db/gameRepository.js';
-import { db } from '../db/database.js';
 
 export interface WorkerProgressEvent {
   status: 'idle' | 'running' | 'completed' | 'error';
@@ -27,39 +26,38 @@ export class CrawlWorker extends EventEmitter {
    */
   async runJob(isManual = false): Promise<boolean> {
     if (this.isRunning) {
-      this.log('warn', 'Worker run requested, but a job is already in progress.');
+      await this.log('warn', 'Worker run requested, but a job is already in progress.');
       return false;
     }
 
     this.isRunning = true;
     const today = new Date().toISOString().split('T')[0];
-    let state = gameRepository.getCrawlState();
+    let state = await gameRepository.getCrawlState();
 
     // Check if new day started
     if (state.last_run_date !== today) {
-      this.log('info', `New day detected (${today} vs ${state.last_run_date}). Resetting daily crawl state.`);
-      gameRepository.updateCrawlState({
+      await this.log('info', `New day detected (${today} vs ${state.last_run_date}). Resetting daily crawl state.`);
+      await gameRepository.updateCrawlState({
         last_run_date: today,
         see_all_page: 1,
         total_processed_today: 0,
         status: 'running',
         current_step: 'New day initialized'
       });
-      state = gameRepository.getCrawlState();
+      state = await gameRepository.getCrawlState();
     } else {
-      gameRepository.updateCrawlState({
+      await gameRepository.updateCrawlState({
         status: 'running',
         current_step: isManual ? 'Manual run started' : 'Hourly run started'
       });
     }
 
-    this.emitProgress('running', '', 'Starting batch processing', 0, 20);
+    await this.emitProgress('running', '', 'Starting batch processing', 0, 20);
 
     try {
-      // Filter out games already processed today
-      const alreadyProcessedToday = new Set(
-        (db.prepare('SELECT id FROM games WHERE last_processed_date = ?').all(today) as { id: string }[]).map(r => r.id)
-      );
+      // Filter out games already processed today via repository abstraction
+      const processedTodayIds = await gameRepository.getProcessedGameIdsForDate(today);
+      const alreadyProcessedToday = new Set(processedTodayIds);
 
       const targetUrls: string[] = [];
       const seenSlugs = new Set<string>();
@@ -79,8 +77,8 @@ export class CrawlWorker extends EventEmitter {
       const isFirstBatchToday = state.total_processed_today === 0;
 
       if (isFirstBatchToday) {
-        this.log('info', 'Batch 1 of the day: Scraping Games / New Releases section...');
-        this.emitProgress('running', '', 'Scraping New Releases', 0, 20);
+        await this.log('info', 'Batch 1 of the day: Scraping Games / New Releases section...');
+        await this.emitProgress('running', '', 'Scraping New Releases', 0, 20);
         const newReleasesUrls = await metacriticScraper.getNewReleasesUrls();
         addCandidateUrls(newReleasesUrls);
       }
@@ -91,11 +89,11 @@ export class CrawlWorker extends EventEmitter {
       let pagesScanned = 0;
 
       while (targetUrls.length < 20 && pagesScanned < MAX_PAGES_TO_SCAN) {
-        this.log('info', `Scanning SEE ALL page ${pageToFetch} (found ${targetUrls.length}/20 target games)...`);
-        this.emitProgress('running', '', `Scraping SEE ALL page ${pageToFetch}`, targetUrls.length, 20);
+        await this.log('info', `Scanning SEE ALL page ${pageToFetch} (found ${targetUrls.length}/20 target games)...`);
+        await this.emitProgress('running', '', `Scraping SEE ALL page ${pageToFetch}`, targetUrls.length, 20);
         const seeAllUrls = await metacriticScraper.getSeeAllPageUrls(pageToFetch);
         if (!seeAllUrls || seeAllUrls.length === 0) {
-          this.log('info', `No more games found on SEE ALL page ${pageToFetch}.`);
+          await this.log('info', `No more games found on SEE ALL page ${pageToFetch}.`);
           pageToFetch++;
           break;
         }
@@ -106,18 +104,18 @@ export class CrawlWorker extends EventEmitter {
       }
 
       // Advance see_all_page for subsequent runs
-      gameRepository.updateCrawlState({ see_all_page: pageToFetch });
+      await gameRepository.updateCrawlState({ see_all_page: pageToFetch });
 
-      this.log('info', `Selected ${targetUrls.length} new games to process today (target: 20).`);
+      await this.log('info', `Selected ${targetUrls.length} new games to process today (target: 20).`);
 
       if (targetUrls.length === 0) {
-        this.log('info', 'No new unprocessed games found in current pages. Next hourly run will check further pages.');
-        gameRepository.updateCrawlState({
+        await this.log('info', 'No new unprocessed games found in current pages. Next hourly run will check further pages.');
+        await gameRepository.updateCrawlState({
           status: 'idle',
           current_step: 'No new games today',
           current_game: ''
         });
-        this.emitProgress('idle', '', 'Finished (no new games)', 0, 20);
+        await this.emitProgress('idle', '', 'Finished (no new games)', 0, 20);
         this.isRunning = false;
         return true;
       }
@@ -128,19 +126,19 @@ export class CrawlWorker extends EventEmitter {
       for (let i = 0; i < targetUrls.length; i++) {
         const url = targetUrls[i];
         const stepIndex = i + 1;
-        this.log('info', `[${stepIndex}/${targetUrls.length}] Scraping: ${url}`);
-        this.emitProgress('running', url, `Scraping details (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+        await this.log('info', `[${stepIndex}/${targetUrls.length}] Scraping: ${url}`);
+        await this.emitProgress('running', url, `Scraping details (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
 
         try {
           // 1. Scrape Metacritic details
           const scraped = await metacriticScraper.scrapeGameDetails(url, today);
           if (!scraped) {
-            this.log('warn', `Could not parse data for ${url}, skipping.`);
+            await this.log('warn', `Could not parse data for ${url}, skipping.`);
             continue;
           }
 
           const { gameInput, criticReviews, userReviews } = scraped;
-          this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+          await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
 
           // 2. Compute Embedding for Similar Games
           const embeddingText = `${gameInput.title}. Developer: ${gameInput.developer}. Platforms: ${gameInput.platforms.map(p => p.platform).join(', ')}. ${gameInput.description || ''}`;
@@ -148,43 +146,44 @@ export class CrawlWorker extends EventEmitter {
             const emb = await geminiService.getEmbedding(embeddingText);
             if (emb) gameInput.embedding = emb;
           } catch (embErr: any) {
-            this.log('warn', `Embedding generation skipped for ${gameInput.title}: ${embErr.message}`);
+            await this.log('warn', `Embedding generation skipped for ${gameInput.title}: ${embErr.message}`);
           }
 
-          // 3. Save / Update game in SQLite
-          gameRepository.upsertGame(gameInput);
-          this.log('success', `Saved game "${gameInput.title}" to database.`);
+          // 3. Save / Update game in Database
+          await gameRepository.upsertGame(gameInput);
+          await this.log('success', `Saved game "${gameInput.title}" to database.`);
 
           // 4. AI Summarize Critic and User Reviews
           try {
             const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
-            gameRepository.upsertReviewsSummary({
+            await gameRepository.upsertReviewsSummary({
               gameId: gameInput.id,
               criticsSummaryPros: reviewsSummary.criticsSummaryPros,
               criticsSummaryCons: reviewsSummary.criticsSummaryCons,
               usersSummaryPros: reviewsSummary.usersSummaryPros,
               usersSummaryCons: reviewsSummary.usersSummaryCons
             });
-            this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
+            await this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
           } catch (sumErr: any) {
-            this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
+            await this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
           }
 
           // 5. Additional Part 1: YouTube Let's Play & Blogger Conclusion
-          this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+          await this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
           try {
             const youtubeResult = await youtubeService.findAndAnalyzeLetsPlay(gameInput.id, gameInput.title);
             if (youtubeResult) {
-              gameRepository.upsertYoutubeLetsplay(youtubeResult);
-              this.log('success', `Found & analyzed YouTube Let's Play for "${gameInput.title}" (${youtubeResult.videoTitle}).`);
+              await gameRepository.upsertYoutubeLetsplay(youtubeResult);
+              await this.log('success', `Found & analyzed YouTube Let's Play for "${gameInput.title}" (${youtubeResult.videoTitle}).`);
             }
           } catch (ytErr: any) {
-            this.log('warn', `YouTube processing error for "${gameInput.title}": ${ytErr.message}`);
+            await this.log('warn', `YouTube processing error for "${gameInput.title}": ${ytErr.message}`);
           }
 
           processedInThisRun++;
-          const newTotalToday = (gameRepository.getCrawlState().total_processed_today || 0) + 1;
-          gameRepository.updateCrawlState({
+          const curState = await gameRepository.getCrawlState();
+          const newTotalToday = (curState.total_processed_today || 0) + 1;
+          await gameRepository.updateCrawlState({
             total_processed_today: newTotalToday,
             current_game: gameInput.title
           });
@@ -192,25 +191,25 @@ export class CrawlWorker extends EventEmitter {
           // Polite delay between games
           await new Promise(res => setTimeout(res, 1500));
         } catch (itemErr: any) {
-          this.log('error', `Error processing game at ${url}: ${itemErr.message}`);
+          await this.log('error', `Error processing game at ${url}: ${itemErr.message}`);
         }
       }
 
-      this.log('success', `Batch complete! Successfully processed ${processedInThisRun} games.`);
-      gameRepository.updateCrawlState({
+      await this.log('success', `Batch complete! Successfully processed ${processedInThisRun} games.`);
+      await gameRepository.updateCrawlState({
         status: 'idle',
         current_step: `Completed batch of ${processedInThisRun} games`,
         current_game: ''
       });
-      this.emitProgress('idle', '', `Completed (${processedInThisRun} games processed)`, processedInThisRun, targetUrls.length);
+      await this.emitProgress('idle', '', `Completed (${processedInThisRun} games processed)`, processedInThisRun, targetUrls.length);
       return true;
     } catch (err: any) {
-      this.log('error', `Critical worker error: ${err.message}`);
-      gameRepository.updateCrawlState({
+      await this.log('error', `Critical worker error: ${err.message}`);
+      await gameRepository.updateCrawlState({
         status: 'error',
         current_step: `Error: ${err.message}`
       });
-      this.emitProgress('error', '', `Error: ${err.message}`, 0, 20);
+      await this.emitProgress('error', '', `Error: ${err.message}`, 0, 20);
       return false;
     } finally {
       this.isRunning = false;
@@ -218,28 +217,39 @@ export class CrawlWorker extends EventEmitter {
     }
   }
 
-  private log(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string) {
+  private async log(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string) {
     console.log(`[Worker][${level.toUpperCase()}] ${message}`);
-    gameRepository.addWorkerLog(level, message, gameId);
+    try {
+      await gameRepository.addWorkerLog(level, message, gameId);
+    } catch (err) {
+      console.error('[Worker] Failed to write worker log to DB:', err);
+    }
     this.emit('log', { level, message, gameId, timestamp: new Date().toISOString() });
   }
 
-  private emitProgress(
+  private async emitProgress(
     status: 'idle' | 'running' | 'completed' | 'error',
     currentGame: string,
     currentStep: string,
     processedCount: number,
     totalTarget: number
   ) {
-    const state = gameRepository.getCrawlState();
+    let todayDate = new Date().toISOString().split('T')[0];
+    let seeAllPage = 1;
+    try {
+      const state = await gameRepository.getCrawlState();
+      todayDate = state.last_run_date;
+      seeAllPage = state.see_all_page;
+    } catch {}
+
     const event: WorkerProgressEvent = {
       status,
       currentGame,
       currentStep,
       processedCount,
       totalTarget,
-      todayDate: state.last_run_date,
-      seeAllPage: state.see_all_page
+      todayDate,
+      seeAllPage
     };
     this.emit('progress', event);
   }

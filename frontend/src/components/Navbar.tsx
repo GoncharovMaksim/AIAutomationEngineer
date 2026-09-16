@@ -1,21 +1,27 @@
 import React from 'react';
-import { Gamepad2, Activity, Play, Sparkles, Terminal } from 'lucide-react';
+import { Gamepad2, Activity, Play, Sparkles, Terminal, ShieldCheck, Key } from 'lucide-react';
 import type { CrawlState } from '../types';
 
 interface NavbarProps {
   crawlState: CrawlState | null;
   isRunning: boolean;
   totalGames: number;
+  isAdmin: boolean;
+  freeRunsRemaining: number;
   onOpenMonitor: () => void;
   onForceRun: () => void;
+  onOpenAuth: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   crawlState,
   isRunning,
   totalGames,
+  isAdmin,
+  freeRunsRemaining,
   onOpenMonitor,
-  onForceRun
+  onForceRun,
+  onOpenAuth
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 transition-all">
@@ -41,11 +47,36 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Actions & Status */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Admin / Quota Badge in Corner */}
+          <button
+            onClick={onOpenAuth}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              isAdmin
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-amber-400 hover:border-amber-500/30'
+            }`}
+            title={isAdmin ? 'Режим Администратора (Безлимит)' : 'Нажмите для авторизации админа'}
+          >
+            {isAdmin ? (
+              <>
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="hidden sm:inline">Админ (∞)</span>
+                <span className="sm:hidden">Админ</span>
+              </>
+            ) : (
+              <>
+                <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="hidden sm:inline">Гость ({freeRunsRemaining}/3)</span>
+                <span className="sm:hidden">{freeRunsRemaining}/3</span>
+              </>
+            )}
+          </button>
+
           {/* Status & Counter Chip */}
           <button
             onClick={onOpenMonitor}
-            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 transition-all cursor-pointer group"
+            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 transition-all cursor-pointer group"
             title="Открыть мониторинг работы воркера"
           >
             <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -62,7 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               ></span>
             </span>
-            <span className="text-xs font-medium text-slate-300 group-hover:text-white hidden md:inline">
+            <span className="text-xs font-medium text-slate-300 group-hover:text-white hidden lg:inline">
               {isRunning ? 'Парсинг...' : 'Ожидание'}
             </span>
             <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono font-medium whitespace-nowrap">
@@ -83,7 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onForceRun}
             disabled={isRunning}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg font-medium text-xs transition-all shadow-md cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-medium text-xs transition-all shadow-md cursor-pointer whitespace-nowrap shrink-0 ${
               isRunning
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
                 : 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-semibold shadow-orange-500/20 active:scale-95'

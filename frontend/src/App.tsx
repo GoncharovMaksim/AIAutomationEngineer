@@ -4,13 +4,14 @@ import { FilterBar } from './components/FilterBar';
 import { GameCard } from './components/GameCard';
 import { GameModal } from './components/GameModal';
 import { WorkerDashboard } from './components/WorkerDashboard';
+import { AdminAuthModal } from './components/AdminAuthModal';
 import type {
   GameItem,
   CrawlState,
   WorkerLog,
   WorkerProgressPayload
 } from './types';
-import { Gamepad2, Sparkles, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Info, X } from 'lucide-react';
+import { Gamepad2, Sparkles, AlertTriangle, CheckCircle2, XCircle, Info, X } from 'lucide-react';
 
 export function App() {
   const [games, setGames] = useState<GameItem[]>([]);
@@ -26,6 +27,11 @@ export function App() {
   // Modal states
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [isMonitorOpen, setIsMonitorOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Auth & Quota states
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [freeRunsRemaining, setFreeRunsRemaining] = useState(3);
 
   // Worker real-time states
   const [crawlState, setCrawlState] = useState<CrawlState | null>(null);
@@ -41,6 +47,23 @@ export function App() {
     setTimeout(() => {
       setToast(curr => (curr?.message === message ? null : curr));
     }, 4000);
+  }, []);
+
+  // Fetch Auth & Quota status
+  const fetchAuthStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('metacritic_admin_token') || '';
+      const headers: Record<string, string> = {};
+      if (token) headers['x-admin-key'] = token;
+      const res = await fetch('/api/auth/status', { headers });
+      const json = await res.json();
+      if (json.success) {
+        setIsAdmin(json.data.isAdmin);
+        setFreeRunsRemaining(json.data.freeRunsRemaining);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch auth status:', e);
+    }
   }, []);
 
   // Load Games
@@ -84,7 +107,8 @@ export function App() {
 
   useEffect(() => {
     fetchPlatforms();
-  }, []);
+    fetchAuthStatus();
+  }, [fetchAuthStatus]);
 
   // Setup WebSocket Connection
   useEffect(() => {
@@ -115,6 +139,7 @@ export function App() {
               // Refresh games list when worker finishes
               fetchGames();
               fetchPlatforms();
+              fetchAuthStatus();
             }
           } else if (msg.type === 'log') {
             setLogs((prev) => [...prev, msg.data]);
@@ -144,25 +169,60 @@ export function App() {
       if (ws) ws.close();
       clearTimeout(reconnectTimeout);
     };
-  }, [fetchGames]);
+  }, [fetchGames, fetchAuthStatus]);
 
   // Force Run Handler
   const handleForceRun = async () => {
     try {
       setIsRunning(true);
-      const res = await fetch('/api/worker/run', { method: 'POST' });
+      const token = localStorage.getItem('metacritic_admin_token') || '';
+      const headers: Record<string, string> = {};
+      if (token) headers['x-admin-key'] = token;
+
+      const res = await fetch('/api/worker/run', { method: 'POST', headers });
       const json = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 403 && json.code === 'QUOTA_EXCEEDED') {
+          showToast('error', json.message || 'Демо-лимит исчерпан');
+          setIsAuthModalOpen(true);
+        } else {
+          showToast('error', json.message || 'Ошибка запуска воркера');
+        }
+        setIsRunning(false);
+        fetchAuthStatus();
+        return;
+      }
+
       if (!json.success) {
         showToast('error', json.message || 'Ошибка запуска воркера');
         setIsRunning(false);
       } else {
         showToast('success', 'Воркер сбора данных успешно запущен!');
         setIsMonitorOpen(true);
+        if (json.freeRunsRemaining !== undefined) {
+          setFreeRunsRemaining(json.freeRunsRemaining);
+        }
       }
+      fetchAuthStatus();
     } catch (err: any) {
       showToast('error', `Ошибка сетевого запроса: ${err.message}`);
       setIsRunning(false);
     }
+  };
+
+  const handleLoginSuccess = (token: string) => {
+    localStorage.setItem('metacritic_admin_token', token);
+    setIsAdmin(true);
+    showToast('success', 'Авторизован как Администратор');
+    fetchAuthStatus();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('metacritic_admin_token');
+    setIsAdmin(false);
+    showToast('info', 'Вы вышли из учетной записи администратора');
+    fetchAuthStatus();
   };
 
   return (
@@ -172,8 +232,11 @@ export function App() {
         crawlState={crawlState}
         isRunning={isRunning}
         totalGames={games.length}
+        isAdmin={isAdmin}
+        freeRunsRemaining={freeRunsRemaining}
         onOpenMonitor={() => setIsMonitorOpen(true)}
         onForceRun={handleForceRun}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -219,46 +282,30 @@ export function App() {
             <p className="text-sm font-semibold text-rose-300">{error}</p>
             <button
               onClick={fetchGames}
-              className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-all cursor-pointer"
+              className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl text-white transition-colors"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Повторить запрос</span>
+              Попробовать снова
             </button>
           </div>
         ) : games.length === 0 ? (
-          <div className="py-20 text-center bg-slate-900/40 border border-slate-800/80 rounded-3xl p-8 max-w-lg mx-auto">
-            <div className="w-14 h-14 rounded-2xl bg-slate-800/60 flex items-center justify-center mx-auto mb-4 text-slate-400">
-              <Gamepad2 className="w-7 h-7" />
-            </div>
-            <h3 className="text-lg font-bold text-white mb-2">Игры не найдены</h3>
-            <p className="text-sm text-slate-400 mb-6">
-              {search || selectedPlatform
-                ? 'Попробуйте сбросить параметры поиска или фильтра по платформам.'
-                : 'База данных пока пуста. Нажмите кнопку сбора, чтобы загрузить первые 20 игр с Metacritic.'}
+          <div className="py-20 text-center bg-slate-900/40 border border-slate-800/80 rounded-3xl p-8 max-w-md mx-auto">
+            <Gamepad2 className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-200">Игры не найдены</h3>
+            <p className="text-xs text-slate-400 mt-1 mb-5">
+              Попробуйте сбросить фильтры или запустите воркер для сбора новой партии игр.
             </p>
-            {search || selectedPlatform ? (
-              <button
-                onClick={() => {
-                  setSearch('');
-                  setSelectedPlatform('');
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-all cursor-pointer"
-              >
-                Сбросить фильтры
-              </button>
-            ) : (
-              <button
-                onClick={handleForceRun}
-                disabled={isRunning}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 font-bold text-xs shadow-lg shadow-orange-500/20 hover:from-amber-400 hover:to-orange-500 transition-all cursor-pointer"
-              >
-                Запустить сбор первых 20 игр
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setSearch('');
+                setSelectedPlatform('');
+              }}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors cursor-pointer"
+            >
+              Сбросить фильтры
+            </button>
           </div>
         ) : (
-          /* Games Grid */
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-fadeIn">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {games.map((game) => (
               <GameCard
                 key={game.id}
@@ -275,7 +322,7 @@ export function App() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© 2026 Metacritic AI Game Analyzer • Выполнено для Skytec Games</p>
           <p className="font-mono text-[11px] text-slate-600">
-            Node.js 24 • React 19 • SQLite • Puppeteer • Gemini 2.5 Flash Lite
+            Node.js 24 • React 19 • Dual-Driver (PostgreSQL + SQLite WAL) • Puppeteer • Gemini 2.5 Flash Lite
           </p>
         </div>
       </footer>
@@ -296,7 +343,19 @@ export function App() {
         logs={logs}
         isRunning={isRunning}
         totalGames={games.length}
+        isAdmin={isAdmin}
+        freeRunsRemaining={freeRunsRemaining}
         onForceRun={handleForceRun}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+
+      {/* Admin Auth Modal */}
+      <AdminAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        isAdmin={isAdmin}
+        onLoginSuccess={handleLoginSuccess}
+        onLogout={handleLogout}
       />
 
       {/* Floating Toast Notification */}
@@ -316,7 +375,7 @@ export function App() {
           <span className="text-sm font-medium">{toast.message}</span>
           <button
             onClick={() => setToast(null)}
-            className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+            className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
