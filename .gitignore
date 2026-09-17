@@ -24,8 +24,3 @@ Thumbs.db
 .idea/
 .vscode/
 scratch/
-
-# Chat and process logs for test review submission MUST be preserved
-!ai_chat_logs/
-!ai_chat_logs/**
-
