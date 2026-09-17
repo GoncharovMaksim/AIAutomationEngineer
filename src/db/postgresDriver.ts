@@ -98,6 +98,13 @@ export class PostgresDriver implements IGameRepository {
           game_id TEXT,
           timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS ip_quotas (
+          ip TEXT PRIMARY KEY,
+          free_runs_used INTEGER DEFAULT 0,
+          last_run_at BIGINT DEFAULT 0,
+          updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
       `);
 
       try {
@@ -435,6 +442,29 @@ export class PostgresDriver implements IGameRepository {
     } catch (e: any) {
       console.warn('[PostgresDriver] pruneOldLogs warning:', e.message);
     }
+  }
+
+  async getClientQuota(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }> {
+    const pool = this.getPool();
+    const res = await pool.query('SELECT free_runs_used, last_run_at FROM ip_quotas WHERE ip = $1', [ip]);
+    return {
+      freeRunsUsed: res.rows[0] ? Number(res.rows[0].free_runs_used) : 0,
+      lastRunAt: res.rows[0] ? Number(res.rows[0].last_run_at) : 0
+    };
+  }
+
+  async recordClientRun(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }> {
+    const pool = this.getPool();
+    const now = Date.now();
+    await pool.query(`
+      INSERT INTO ip_quotas (ip, free_runs_used, last_run_at, updated_at)
+      VALUES ($1, 1, $2, CURRENT_TIMESTAMP)
+      ON CONFLICT(ip) DO UPDATE SET
+        free_runs_used = ip_quotas.free_runs_used + 1,
+        last_run_at = EXCLUDED.last_run_at,
+        updated_at = CURRENT_TIMESTAMP
+    `, [ip, now]);
+    return this.getClientQuota(ip);
   }
 
   async checkpointWal(): Promise<void> {

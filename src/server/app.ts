@@ -7,19 +7,13 @@ import { gameRepository } from '../db/gameRepository.js';
 import { crawlWorker } from '../services/worker.js';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
 
-interface ClientQuota {
-  freeRunsUsed: number;
-  lastRunAt: number;
-}
-
 export function createApp() {
   const app = express();
 
   app.use(cors());
   app.use(express.json());
 
-  // IP Quota Tracker for Free Demo Runs
-  const clientQuotas = new Map<string, ClientQuota>();
+  // Persistent IP Quota Tracker via GameRepository
   let lastManualRunTimestamp = 0;
   const MANUAL_RUN_COOLDOWN_MS = 60 * 1000;
 
@@ -53,10 +47,10 @@ export function createApp() {
   });
 
   // Auth Status check
-  app.get('/api/auth/status', (req, res) => {
+  app.get('/api/auth/status', async (req, res) => {
     const admin = isAdmin(req);
     const ip = getClientIp(req);
-    const quota = clientQuotas.get(ip) || { freeRunsUsed: 0, lastRunAt: 0 };
+    const quota = await gameRepository.getClientQuota(ip);
     const remaining = admin ? 999 : Math.max(0, config.demoMaxFreeRuns - quota.freeRunsUsed);
 
     res.json({
@@ -245,7 +239,7 @@ export function createApp() {
 
     const admin = isAdmin(req);
     const ip = getClientIp(req);
-    const quota = clientQuotas.get(ip) || { freeRunsUsed: 0, lastRunAt: 0 };
+    const quota = await gameRepository.getClientQuota(ip);
 
     // Check demo quota if not admin
     if (!admin && quota.freeRunsUsed >= config.demoMaxFreeRuns) {
@@ -270,10 +264,10 @@ export function createApp() {
 
     lastManualRunTimestamp = now;
 
+    let currentRunsUsed = quota.freeRunsUsed;
     if (!admin) {
-      quota.freeRunsUsed += 1;
-      quota.lastRunAt = now;
-      clientQuotas.set(ip, quota);
+      const updated = await gameRepository.recordClientRun(ip);
+      currentRunsUsed = updated.freeRunsUsed;
     }
 
     // Launch worker asynchronously
@@ -281,7 +275,7 @@ export function createApp() {
       console.error('[API] Worker run error:', err);
     });
 
-    const remaining = admin ? 999 : Math.max(0, config.demoMaxFreeRuns - quota.freeRunsUsed);
+    const remaining = admin ? 999 : Math.max(0, config.demoMaxFreeRuns - currentRunsUsed);
 
     res.json({
       success: true,

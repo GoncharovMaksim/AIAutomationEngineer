@@ -60,6 +60,7 @@ export const config = {
   adminSecret: process.env.ADMIN_SECRET || 'skytec-admin-2026',
   demoMaxFreeRuns: parseInt(process.env.DEMO_MAX_FREE_RUNS || '3', 10),
   maxDailyCrawlGames: parseInt(process.env.MAX_DAILY_CRAWL_GAMES || '60', 10),
+  deepPlatformScraping: process.env.DEEP_PLATFORM_SCRAPING === 'true',
   proxies,
 
   // Mark a proxy as temporarily unavailable due to connection failure

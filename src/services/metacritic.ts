@@ -347,15 +347,32 @@ export class MetacriticScraper {
         return param;
       };
 
+      // Quality Guard log
+      if (!pageInfo.platformCards || pageInfo.platformCards.length === 0) {
+        console.warn(`[QualityGuard] ℹ️ Nuxt platform cards not found on ${gameUrl}. Falling back to JSON-LD platform list & aggregate rating.`);
+      } else {
+        console.log(`[QualityGuard] ✅ Successfully extracted ${pageInfo.platformCards.length} platform cards with individual scores on ${gameUrl}.`);
+      }
+
       // Map platforms with individual scores
       const platforms: GamePlatformInput[] = [];
 
       if (pageInfo.platformCards && pageInfo.platformCards.length > 0) {
         for (const card of pageInfo.platformCards) {
+          let metascore = card.score;
+          let userscore = pageInfo.userscore;
+
+          // Optional deep per-platform subpage traversal if DEEP_PLATFORM_SCRAPING is enabled
+          if (config.deepPlatformScraping && card.platformParam) {
+            const deep = await this.scrapePlatformScore(slug, card.platformParam);
+            if (deep.metascore !== null) metascore = deep.metascore;
+            if (deep.userscore !== null) userscore = deep.userscore;
+          }
+
           platforms.push({
             platform: formatPlatformName(card.platformParam),
-            metascore: card.score,
-            userscore: pageInfo.userscore
+            metascore,
+            userscore
           });
         }
       }
@@ -437,6 +454,35 @@ export class MetacriticScraper {
     } catch (err: any) {
       console.warn(`[Metacritic] scrapeReviewsSubpage failed for ${url}: ${err.message}`);
       return [];
+    }
+  }
+
+  /**
+   * Optional deep-scraping: visits /critic-reviews/?platform=X to get platform-specific aggregate ratings
+   */
+  async scrapePlatformScore(slug: string, platformParam: string): Promise<{ metascore: number | null; userscore: number | null }> {
+    const url = `https://www.metacritic.com/game/${slug}/critic-reviews/?platform=${platformParam}`;
+    try {
+      return await this.withPageRetry(async (page) => {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        return page.evaluate(() => {
+          let ld: any = null;
+          try {
+            const s = document.querySelector('script[type="application/ld+json"]');
+            if (s?.textContent) ld = JSON.parse(s.textContent);
+          } catch {}
+          const metascore = ld?.aggregateRating?.ratingValue ? parseInt(ld.aggregateRating.ratingValue, 10) : null;
+          let userscore: number | null = null;
+          const userEl = document.querySelector('[data-testid="score-user"], [class*="c-siteReviewScore_user"]');
+          if (userEl?.textContent) {
+            const val = parseFloat(userEl.textContent.trim());
+            if (!isNaN(val) && val >= 0 && val <= 10) userscore = val;
+          }
+          return { metascore, userscore };
+        });
+      }, 2);
+    } catch {
+      return { metascore: null, userscore: null };
     }
   }
 

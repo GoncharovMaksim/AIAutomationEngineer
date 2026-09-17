@@ -99,6 +99,13 @@ export class SqliteDriver implements IGameRepository {
         game_id TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS ip_quotas (
+        ip TEXT PRIMARY KEY,
+        free_runs_used INTEGER DEFAULT 0,
+        last_run_at INTEGER DEFAULT 0,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     try {
@@ -430,6 +437,29 @@ export class SqliteDriver implements IGameRepository {
     } catch (e: any) {
       console.warn('[SqliteDriver] pruneOldLogs warning:', e.message);
     }
+  }
+
+  async getClientQuota(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }> {
+    const db = this.getClient();
+    const row = db.prepare('SELECT free_runs_used, last_run_at FROM ip_quotas WHERE ip = ?').get(ip) as any;
+    return {
+      freeRunsUsed: row ? Number(row.free_runs_used) : 0,
+      lastRunAt: row ? Number(row.last_run_at) : 0
+    };
+  }
+
+  async recordClientRun(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }> {
+    const db = this.getClient();
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO ip_quotas (ip, free_runs_used, last_run_at, updated_at)
+      VALUES (?, 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(ip) DO UPDATE SET
+        free_runs_used = ip_quotas.free_runs_used + 1,
+        last_run_at = excluded.last_run_at,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(ip, now);
+    return this.getClientQuota(ip);
   }
 
   async checkpointWal(): Promise<void> {

@@ -95,6 +95,8 @@ export interface IGameRepository {
   addWorkerLog(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string): Promise<void>;
   getRecentLogs(limit?: number): Promise<WorkerLog[]>;
   pruneOldLogs(keepCount?: number): Promise<void>;
+  getClientQuota(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }>;
+  recordClientRun(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }>;
   checkpointWal(): Promise<void>;
   resetDatabase(): Promise<void>;
 }
