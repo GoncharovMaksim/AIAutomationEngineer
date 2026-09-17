@@ -77,6 +77,7 @@ export class SqliteDriver implements IGameRepository {
         views_count INTEGER,
         blogger_conclusion TEXT,
         transcript_sample TEXT,
+        transcript_available INTEGER DEFAULT 0,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -102,6 +103,10 @@ export class SqliteDriver implements IGameRepository {
 
     try {
       this.db.exec('ALTER TABLE reviews_summary ADD COLUMN reviews_hash TEXT;');
+    } catch {}
+
+    try {
+      this.db.exec('ALTER TABLE youtube_letsplays ADD COLUMN transcript_available INTEGER DEFAULT 0;');
     } catch {}
 
     // Initialize crawl_state row 1 if empty
@@ -224,8 +229,8 @@ export class SqliteDriver implements IGameRepository {
   async upsertYoutubeLetsplay(lp: YoutubeLetsplayInput): Promise<void> {
     const db = this.getClient();
     db.prepare(`
-      INSERT INTO youtube_letsplays (game_id, video_id, video_title, video_url, channel_name, views_count, blogger_conclusion, transcript_sample, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO youtube_letsplays (game_id, video_id, video_title, video_url, channel_name, views_count, blogger_conclusion, transcript_sample, transcript_available, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(game_id) DO UPDATE SET
         video_id = excluded.video_id,
         video_title = excluded.video_title,
@@ -234,6 +239,7 @@ export class SqliteDriver implements IGameRepository {
         views_count = excluded.views_count,
         blogger_conclusion = excluded.blogger_conclusion,
         transcript_sample = excluded.transcript_sample,
+        transcript_available = excluded.transcript_available,
         updated_at = CURRENT_TIMESTAMP
     `).run(
       lp.gameId,
@@ -243,7 +249,8 @@ export class SqliteDriver implements IGameRepository {
       lp.channelName || null,
       lp.viewsCount || 0,
       lp.bloggerConclusion,
-      lp.transcriptSample || null
+      lp.transcriptSample || null,
+      lp.transcriptAvailable ? 1 : 0
     );
   }
 

@@ -184,10 +184,11 @@ AIAutomationEngineer/
 │   │   └── types.ts
 │   ├── vite.config.ts
 │   └── package.json
-├── tests/                     # 23 модульных и интеграционных теста (Node test runner)
+├── tests/                     # 30 модульных и интеграционных тестов (Node test runner)
 │   ├── auth.test.ts           # Тесты /health, авторизации и квот
 │   ├── config.test.ts         # Тесты парсинга прокси
 │   ├── db.test.ts             # Тесты драйвера базы данных и векторов
+│   ├── metacritic.test.ts     # Тесты скрапера, YouTube-субтитров и пайплайна
 │   ├── rotation.test.ts       # Тесты суточной ротации
 │   └── similarity.test.ts     # Тесты косинусного сходства
 ├── data/                      # Локальная база SQLite (metacritic_games.db)

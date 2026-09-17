@@ -35,6 +35,7 @@ export interface YoutubeLetsplayInput {
   viewsCount?: number;
   bloggerConclusion: string;
   transcriptSample?: string;
+  transcriptAvailable?: boolean;
 }
 
 export interface GameFilters {

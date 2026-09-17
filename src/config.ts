@@ -172,6 +172,12 @@ export function validateConfig() {
     console.log('[Config] ✅ GEMINI_API_KEY is present.');
   }
 
+  if (!process.env.ADMIN_SECRET || process.env.ADMIN_SECRET === 'skytec-admin-2026') {
+    console.warn('[Config] ⚠️ WARNING: ADMIN_SECRET is not set or uses default demo value! Set a strong secret in .env for production.');
+  } else {
+    console.log('[Config] ✅ ADMIN_SECRET is configured.');
+  }
+
   if (proxies.length > 0) {
     console.log(`[Config] ✅ Configured ${proxies.length} proxy/proxies with round-robin rotation.`);
   } else {

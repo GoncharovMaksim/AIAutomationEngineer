@@ -82,7 +82,7 @@ export function createApp() {
     }
     return res.status(401).json({
       success: false,
-      message: 'Неверный пароль. Для проверки используйте демо-пароль: skytec-admin-2026'
+      message: 'Неверный пароль администратора.'
     });
   });
 

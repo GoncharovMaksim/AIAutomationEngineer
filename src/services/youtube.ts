@@ -110,6 +110,7 @@ export class YouTubeService {
         console.log(`[YouTube] Selected top video "${videoTitle}" by "${channelName}" with ${viewsCount.toLocaleString()} views (ID: ${videoId})`);
 
         let transcriptText = '';
+        let transcriptAvailable = false;
         try {
           const customFetch = (url: any, init: any = {}) => {
             const fetchOpts = { ...init, signal: AbortSignal.timeout(8000) };
@@ -121,14 +122,22 @@ export class YouTubeService {
             fetch: customFetch as any
           });
           transcriptText = transcriptEntries.map((t: any) => t.text).join(' ');
-          console.log(`[YouTube] Extracted real transcript (${transcriptText.length} chars) for video ${videoId}`);
+          if (transcriptText.trim().length > 50) {
+            transcriptAvailable = true;
+            console.log(`[YouTube] Extracted real transcript (${transcriptText.length} chars) for video ${videoId}`);
+          }
         } catch (transcriptErr: any) {
-          console.warn(`[YouTube] Subtitles unavailable for ${videoId} (${transcriptErr.message}). Using real video metadata & description...`);
-          transcriptText = `Видео летсплея игры "${gameTitle}" от канала "${channelName}" с названием "${videoTitle}". Просмотры: ${viewsCount.toLocaleString()}. Описание автора: ${topVideo.description}`;
+          console.warn(`[YouTube] Subtitles unavailable for ${videoId} (${transcriptErr.message}). Recording honest unavailable status...`);
+          transcriptAvailable = false;
         }
 
-        console.log(`[YouTube] Generating AI blogger conclusion for "${gameTitle}"...`);
-        const bloggerConclusion = await geminiService.summarizeBloggerVideo(gameTitle, transcriptText);
+        let bloggerConclusion = '';
+        if (transcriptAvailable) {
+          console.log(`[YouTube] Generating AI blogger conclusion from real subtitles for "${gameTitle}"...`);
+          bloggerConclusion = await geminiService.summarizeBloggerVideo(gameTitle, transcriptText);
+        } else {
+          bloggerConclusion = `Транскрипт недоступен: видео не содержит субтитров (No Commentary или субтитры отключены автором). Летсплей от канала "${channelName}" (${viewsCount.toLocaleString()} просмотров).`;
+        }
 
         if (activeProxyUrl) {
           config.markProxySuccess(activeProxyUrl);
@@ -142,7 +151,8 @@ export class YouTubeService {
           channelName,
           viewsCount,
           bloggerConclusion,
-          transcriptSample: transcriptText.slice(0, 500)
+          transcriptSample: transcriptAvailable ? transcriptText.slice(0, 500) : '',
+          transcriptAvailable
         };
       } catch (err: any) {
         if (activeProxyUrl) {

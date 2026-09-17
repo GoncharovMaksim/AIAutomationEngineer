@@ -257,7 +257,7 @@ export class MetacriticScraper {
         const platformsList: string[] = Array.isArray(ld?.gamePlatform) ? ld.gamePlatform : (ld?.gamePlatform ? [ld.gamePlatform] : ['PC']);
 
         // 1. Check for specific platform score cards in "All Platforms" section
-        const platformCards = Array.from(document.querySelectorAll('.product-score-card--platform')).map(card => {
+        let platformCards = Array.from(document.querySelectorAll('.product-score-card--platform')).map(card => {
           const href = card.getAttribute('href') || '';
           const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';
           const scoreMatch = card.textContent?.match(/([0-9]{1,3})\s*$/) || card.textContent?.match(/Critic Reviews\s*([0-9]{1,3})/i);
@@ -268,16 +268,48 @@ export class MetacriticScraper {
           };
         }).filter(c => c.platformParam && c.score !== null);
 
+        // Fallback: check other platform links if specific cards were not found
+        if (platformCards.length === 0) {
+          const platformLinks = Array.from(document.querySelectorAll('a[href*="critic-reviews?platform="], a[href*="critic-reviews/?platform="]'));
+          const seen = new Set<string>();
+          for (const a of platformLinks) {
+            const href = a.getAttribute('href') || '';
+            const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';
+            if (platformParam && !seen.has(platformParam.toLowerCase())) {
+              seen.add(platformParam.toLowerCase());
+              const scoreMatch = a.textContent?.match(/([0-9]{1,3})/);
+              platformCards.push({
+                platformParam,
+                score: scoreMatch ? parseInt(scoreMatch[1], 10) : metascoreFromLd
+              });
+            }
+          }
+        }
+
         // 2. Look for userscore in DOM
         let userscore: number | null = null;
-        const scoreWrappers = Array.from(document.querySelectorAll('[data-testid="global-score-wrapper"], [class*="productScoreInfo"], div'));
-        for (const w of scoreWrappers) {
-          const txt = w.textContent?.trim() || '';
-          if (txt.toLowerCase().includes('user score') && (txt.toLowerCase().includes('based on') || txt.toLowerCase().includes('rating'))) {
-            const match = txt.match(/([0-9]{1,2}\.[0-9])/);
-            if (match) {
-              userscore = parseFloat(match[1]);
-              break;
+        // Check direct score badges first
+        const directUserScoreEl = document.querySelector(
+          '[data-testid="score-user"], [class*="c-siteReviewScore_user"], [class*="c-productScoreInfo_scoreNumber"], .c-productScoreInfo_scoreNumber span'
+        );
+        if (directUserScoreEl?.textContent) {
+          const parsed = parseFloat(directUserScoreEl.textContent.trim());
+          if (!isNaN(parsed) && parsed >= 0 && parsed <= 10) {
+            userscore = parsed;
+          }
+        }
+
+        // Fallback: scan score containers
+        if (userscore === null) {
+          const scoreWrappers = Array.from(document.querySelectorAll('[data-testid="global-score-wrapper"], [class*="productScoreInfo"], div'));
+          for (const w of scoreWrappers) {
+            const txt = w.textContent?.trim() || '';
+            if (txt.toLowerCase().includes('user score') && (txt.toLowerCase().includes('based on') || txt.toLowerCase().includes('rating'))) {
+              const match = txt.match(/([0-9]{1,2}\.[0-9])/);
+              if (match) {
+                userscore = parseFloat(match[1]);
+                break;
+              }
             }
           }
         }
@@ -382,32 +414,32 @@ export class MetacriticScraper {
    * Helper to scrape quotes from critic-reviews or user-reviews subpages
    */
   private async scrapeReviewsSubpage(baseUrl: string, subpath: 'critic-reviews' | 'user-reviews'): Promise<string[]> {
-    const page = await this.createPage();
+    const url = `${baseUrl.replace(/\/$/, '')}/${subpath}/`;
     try {
-      const url = `${baseUrl.replace(/\/$/, '')}/${subpath}/`;
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+      return await this.withPageRetry(async (page) => {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-      const quotes = await page.evaluate(() => {
-        // Collect quotes from review cards
-        const reviewCards = Array.from(document.querySelectorAll('.c-siteReview, [class*="ReviewCard"], div.bg-gray-50, div[class*="min-h"]'));
-        const texts: string[] = [];
+        const quotes = await page.evaluate(() => {
+          // Collect quotes from review cards
+          const reviewCards = Array.from(document.querySelectorAll('.c-siteReview, [class*="ReviewCard"], div.bg-gray-50, div[class*="min-h"]'));
+          const texts: string[] = [];
 
-        for (const card of reviewCards) {
-          const txt = card.textContent?.trim().replace(/\s+/g, ' ') || '';
-          // Filter out short or navigation texts
-          if (txt.length > 60 && !txt.includes('Explore') && !txt.includes('Privacy Policy')) {
-            texts.push(txt.slice(0, 400));
+          for (const card of reviewCards) {
+            const txt = card.textContent?.trim().replace(/\s+/g, ' ') || '';
+            // Filter out short or navigation texts
+            if (txt.length > 60 && !txt.includes('Explore') && !txt.includes('Privacy Policy')) {
+              texts.push(txt.slice(0, 400));
+            }
           }
-        }
 
-        return texts.slice(0, 10);
-      });
+          return texts.slice(0, 10);
+        });
 
-      return quotes;
-    } catch {
+        return quotes;
+      }, 2);
+    } catch (err: any) {
+      console.warn(`[Metacritic] scrapeReviewsSubpage failed for ${url}: ${err.message}`);
       return [];
-    } finally {
-      await page.close().catch(() => {});
     }
   }
 

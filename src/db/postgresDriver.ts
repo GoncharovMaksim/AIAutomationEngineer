@@ -63,6 +63,7 @@ export class PostgresDriver implements IGameRepository {
           critics_summary_cons TEXT,
           users_summary_pros TEXT,
           users_summary_cons TEXT,
+          reviews_hash TEXT,
           updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -75,6 +76,7 @@ export class PostgresDriver implements IGameRepository {
           views_count BIGINT,
           blogger_conclusion TEXT,
           transcript_sample TEXT,
+          transcript_available BOOLEAN DEFAULT FALSE,
           updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -97,6 +99,14 @@ export class PostgresDriver implements IGameRepository {
           timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      try {
+        await client.query('ALTER TABLE reviews_summary ADD COLUMN IF NOT EXISTS reviews_hash TEXT');
+      } catch {}
+
+      try {
+        await client.query('ALTER TABLE youtube_letsplays ADD COLUMN IF NOT EXISTS transcript_available BOOLEAN DEFAULT FALSE');
+      } catch {}
 
       // Initialize crawl_state row 1 if empty
       const stateRes = await client.query('SELECT * FROM crawl_state WHERE id = 1');
@@ -188,28 +198,30 @@ export class PostgresDriver implements IGameRepository {
   async upsertReviewsSummary(summary: ReviewsSummaryInput): Promise<void> {
     const pool = this.getPool();
     await pool.query(`
-      INSERT INTO reviews_summary (game_id, critics_summary_pros, critics_summary_cons, users_summary_pros, users_summary_cons, updated_at)
-      VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+      INSERT INTO reviews_summary (game_id, critics_summary_pros, critics_summary_cons, users_summary_pros, users_summary_cons, reviews_hash, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
       ON CONFLICT(game_id) DO UPDATE SET
         critics_summary_pros = EXCLUDED.critics_summary_pros,
         critics_summary_cons = EXCLUDED.critics_summary_cons,
         users_summary_pros = EXCLUDED.users_summary_pros,
         users_summary_cons = EXCLUDED.users_summary_cons,
+        reviews_hash = EXCLUDED.reviews_hash,
         updated_at = CURRENT_TIMESTAMP
     `, [
       summary.gameId,
       summary.criticsSummaryPros,
       summary.criticsSummaryCons,
       summary.usersSummaryPros,
-      summary.usersSummaryCons
+      summary.usersSummaryCons,
+      summary.reviewsHash || null
     ]);
   }
 
   async upsertYoutubeLetsplay(lp: YoutubeLetsplayInput): Promise<void> {
     const pool = this.getPool();
     await pool.query(`
-      INSERT INTO youtube_letsplays (game_id, video_id, video_title, video_url, channel_name, views_count, blogger_conclusion, transcript_sample, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+      INSERT INTO youtube_letsplays (game_id, video_id, video_title, video_url, channel_name, views_count, blogger_conclusion, transcript_sample, transcript_available, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
       ON CONFLICT(game_id) DO UPDATE SET
         video_id = EXCLUDED.video_id,
         video_title = EXCLUDED.video_title,
@@ -218,6 +230,7 @@ export class PostgresDriver implements IGameRepository {
         views_count = EXCLUDED.views_count,
         blogger_conclusion = EXCLUDED.blogger_conclusion,
         transcript_sample = EXCLUDED.transcript_sample,
+        transcript_available = EXCLUDED.transcript_available,
         updated_at = CURRENT_TIMESTAMP
     `, [
       lp.gameId,
@@ -227,7 +240,8 @@ export class PostgresDriver implements IGameRepository {
       lp.channelName || null,
       lp.viewsCount || 0,
       lp.bloggerConclusion,
-      lp.transcriptSample || null
+      lp.transcriptSample || null,
+      lp.transcriptAvailable ? true : false
     ]);
   }
 
