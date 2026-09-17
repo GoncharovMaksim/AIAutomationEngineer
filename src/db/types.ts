@@ -91,6 +91,8 @@ export interface IGameRepository {
     current_game?: string;
     current_step?: string;
   }): Promise<void>;
+  acquireWorkerLock(): Promise<boolean>;
+  releaseWorkerLock(): Promise<void>;
 
   addWorkerLog(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string): Promise<void>;
   getRecentLogs(limit?: number): Promise<WorkerLog[]>;

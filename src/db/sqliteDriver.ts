@@ -419,6 +419,29 @@ export class SqliteDriver implements IGameRepository {
     db.prepare(`UPDATE crawl_state SET ${fields.join(', ')} WHERE id = 1`).run(...values);
   }
 
+  async acquireWorkerLock(): Promise<boolean> {
+    const db = this.getClient();
+    const row = db.prepare('SELECT status, updated_at FROM crawl_state WHERE id = 1').get() as { status: string; updated_at: string } | undefined;
+    if (row && row.status === 'running') {
+      const updatedAtMs = new Date(row.updated_at).getTime();
+      const isStale = !isNaN(updatedAtMs) && (Date.now() - updatedAtMs > 30 * 60 * 1000);
+      if (!isStale) {
+        return false;
+      }
+    }
+    const result = db.prepare(`
+      UPDATE crawl_state 
+      SET status = 'running', updated_at = CURRENT_TIMESTAMP 
+      WHERE id = 1 AND (status != 'running' OR updated_at < datetime('now', '-30 minutes'))
+    `).run();
+    return result.changes > 0;
+  }
+
+  async releaseWorkerLock(): Promise<void> {
+    const db = this.getClient();
+    db.prepare(`UPDATE crawl_state SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run();
+  }
+
   async addWorkerLog(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string): Promise<void> {
     const db = this.getClient();
     db.prepare('INSERT INTO worker_logs (level, message, game_id) VALUES (?, ?, ?)').run(level, message, gameId || null);

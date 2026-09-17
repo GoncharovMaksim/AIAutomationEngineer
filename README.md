@@ -168,6 +168,12 @@ npm test
 2. **Персистентная Freemium-квота в базе данных:**
    * В отличие от in-memory словарей, таблица `ip_quotas` (в SQLite WAL и PostgreSQL) персистентно сохраняет лимиты бесплатных запусков между перезапусками сервера, рестартами контейнеров Docker и процессами PM2.
 
+3. **Распределённая блокировка воркера (Distributed DB-level Concurrency Lock):**
+   * Помимо in-memory guard, методы `acquireWorkerLock()` и `releaseWorkerLock()` производят атомарный захват блокировки на уровне базы данных (`crawl_state` в SQLite и PostgreSQL) с механизмом защиты от зависаний (stale timeout 30 мин). Это исключает параллельный сбор данных даже при масштабировании в кластере (PM2 cluster, Kubernetes, Docker).
+
+4. **Защита публичного API от флуда (Rate Limiting):**
+   * Все маршруты `/api/*` снабжены скользящим rate limiter (до 150 запросов в минуту на IP-клиент) со стандартными RFC-заголовками ответа `X-RateLimit-Limit`, `X-RateLimit-Remaining` и `X-RateLimit-Reset`. При превышении возвращается корректный HTTP 429. Админ-запросы и healthcheck `/health` обслуживаются без ограничений.
+
 ---
 
 ## 📂 Структура проекта

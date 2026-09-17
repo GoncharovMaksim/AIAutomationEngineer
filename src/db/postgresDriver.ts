@@ -423,6 +423,30 @@ export class PostgresDriver implements IGameRepository {
     await pool.query(`UPDATE crawl_state SET ${fields.join(', ')} WHERE id = 1`, values);
   }
 
+  async acquireWorkerLock(): Promise<boolean> {
+    const pool = this.getPool();
+    const rowRes = await pool.query('SELECT status, updated_at FROM crawl_state WHERE id = 1');
+    const row = rowRes.rows[0];
+    if (row && row.status === 'running') {
+      const updatedAtMs = new Date(row.updated_at).getTime();
+      const isStale = !isNaN(updatedAtMs) && (Date.now() - updatedAtMs > 30 * 60 * 1000);
+      if (!isStale) {
+        return false;
+      }
+    }
+    const result = await pool.query(`
+      UPDATE crawl_state 
+      SET status = 'running', updated_at = CURRENT_TIMESTAMP 
+      WHERE id = 1 AND (status != 'running' OR updated_at < NOW() - INTERVAL '30 minutes')
+    `);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async releaseWorkerLock(): Promise<void> {
+    const pool = this.getPool();
+    await pool.query(`UPDATE crawl_state SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = 1`);
+  }
+
   async addWorkerLog(level: 'info' | 'warn' | 'error' | 'success', message: string, gameId?: string): Promise<void> {
     const pool = this.getPool();
     await pool.query('INSERT INTO worker_logs (level, message, game_id) VALUES ($1, $2, $3)', [level, message, gameId || null]);

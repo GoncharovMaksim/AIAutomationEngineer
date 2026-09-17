@@ -124,4 +124,23 @@ describe('Core Pipeline End-to-End Business Logic', () => {
     const { crawlWorker } = await import('../src/services/worker.js');
     assert.ok(typeof crawlWorker.runJob === 'function');
   });
+
+  it('distributed worker lock atomically acquires and releases DB lock', async () => {
+    // 1. Initial lock acquisition should succeed
+    const firstLock = await db.acquireWorkerLock();
+    assert.equal(firstLock, true, 'First lock attempt must succeed');
+
+    // 2. Second concurrent lock attempt while running must be rejected
+    const secondLock = await db.acquireWorkerLock();
+    assert.equal(secondLock, false, 'Concurrent lock attempt while active must be rejected');
+
+    // 3. Release lock
+    await db.releaseWorkerLock();
+
+    // 4. Lock acquisition after release should succeed again
+    const thirdLock = await db.acquireWorkerLock();
+    assert.equal(thirdLock, true, 'Lock must be acquirable again after release');
+
+    await db.releaseWorkerLock();
+  });
 });

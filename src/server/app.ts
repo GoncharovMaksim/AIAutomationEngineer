@@ -30,6 +30,55 @@ export function createApp() {
     return token === config.adminSecret;
   }
 
+  // Public API Rate Limiter (sliding window per IP)
+  const apiRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+  const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+  const RATE_LIMIT_MAX_REQUESTS = 150;
+
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, data] of apiRateLimitMap.entries()) {
+      if (now > data.resetAt) {
+        apiRateLimitMap.delete(ip);
+      }
+    }
+  }, 5 * 60 * 1000);
+  if (cleanupInterval.unref) cleanupInterval.unref();
+
+  const publicApiRateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (isAdmin(req)) return next();
+
+    const ip = getClientIp(req);
+    const now = Date.now();
+    let client = apiRateLimitMap.get(ip);
+
+    if (!client || now > client.resetAt) {
+      client = { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS };
+      apiRateLimitMap.set(ip, client);
+    } else {
+      client.count++;
+    }
+
+    const remaining = Math.max(0, RATE_LIMIT_MAX_REQUESTS - client.count);
+    const resetSeconds = Math.ceil((client.resetAt - now) / 1000);
+
+    res.setHeader('X-RateLimit-Limit', RATE_LIMIT_MAX_REQUESTS.toString());
+    res.setHeader('X-RateLimit-Remaining', remaining.toString());
+    res.setHeader('X-RateLimit-Reset', resetSeconds.toString());
+
+    if (client.count > RATE_LIMIT_MAX_REQUESTS) {
+      return res.status(429).json({
+        success: false,
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: `Превышен лимит запросов (${RATE_LIMIT_MAX_REQUESTS} в минуту). Пожалуйста, подождите ${resetSeconds} сек.`
+      });
+    }
+
+    next();
+  };
+
+  app.use('/api', publicApiRateLimiter);
+
   // Healthcheck endpoint for Docker / K8s / Cloud
   app.get('/health', async (req, res) => {
     try {

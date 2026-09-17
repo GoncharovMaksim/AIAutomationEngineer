@@ -36,7 +36,7 @@ describe('Auth, Quota & Health API Endpoints', () => {
       body: options.body ? JSON.stringify(options.body) : undefined
     });
     const body = await res.json();
-    return { status: res.status, body };
+    return { status: res.status, body, headers: res.headers };
   }
 
   it('GET /health returns 200 with database: connected', async () => {
@@ -48,12 +48,14 @@ describe('Auth, Quota & Health API Endpoints', () => {
   });
 
   it('GET /api/auth/status returns default 3 free runs for guest', async () => {
-    const { status, body } = await request('/api/auth/status');
+    const { status, body, headers } = await request('/api/auth/status');
     assert.strictEqual(status, 200);
     assert.strictEqual(body.success, true);
     assert.strictEqual(body.data.isAdmin, false);
     assert.strictEqual(body.data.maxFreeRuns, 3);
     assert.strictEqual(body.data.freeRunsRemaining, 3);
+    assert.strictEqual(headers.get('x-ratelimit-limit'), '150');
+    assert.ok(headers.get('x-ratelimit-remaining') !== null);
   });
 
   it('POST /api/auth/login rejects wrong password', async () => {
@@ -82,5 +84,13 @@ describe('Auth, Quota & Health API Endpoints', () => {
     assert.strictEqual(status, 200);
     assert.strictEqual(body.data.isAdmin, true);
     assert.strictEqual(body.data.freeRunsRemaining, 999);
+  });
+
+  it('GET /api/games includes standard RateLimit headers for public clients', async () => {
+    const { status, headers } = await request('/api/games');
+    assert.strictEqual(status, 200);
+    assert.strictEqual(headers.get('x-ratelimit-limit'), '150');
+    const remaining = parseInt(headers.get('x-ratelimit-remaining') || '0', 10);
+    assert.ok(remaining < 150 && remaining >= 0);
   });
 });

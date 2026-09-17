@@ -32,6 +32,13 @@ export class CrawlWorker extends EventEmitter {
       return false;
     }
 
+    // Distributed database-level concurrency lock
+    const lockAcquired = await gameRepository.acquireWorkerLock();
+    if (!lockAcquired) {
+      await this.log('warn', '🛑 [DistributedLock] Worker run rejected: Another instance or job is already active.');
+      return false;
+    }
+
     if (deepPlatformScrapingOverride !== undefined) {
       await this.log(
         'info',
@@ -271,6 +278,9 @@ export class CrawlWorker extends EventEmitter {
       return false;
     } finally {
       this.isRunning = false;
+      try {
+        await gameRepository.releaseWorkerLock();
+      } catch {}
       await metacriticScraper.close();
     }
   }
