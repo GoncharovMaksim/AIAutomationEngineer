@@ -218,6 +218,10 @@ export class MetacriticScraper {
       return await this.withPageRetry(async (page) => {
         console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
         await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.waitForSelector(
+          'a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform',
+          { timeout: 8000 }
+        ).catch(() => {});
 
       // Extract JSON-LD and page DOM info
       const pageInfo = await page.evaluate(() => {
@@ -257,34 +261,27 @@ export class MetacriticScraper {
         const platformsList: string[] = Array.isArray(ld?.gamePlatform) ? ld.gamePlatform : (ld?.gamePlatform ? [ld.gamePlatform] : ['PC']);
 
         // 1. Check for specific platform score cards in "All Platforms" section
-        let platformCards = Array.from(document.querySelectorAll('.product-score-card--platform')).map(card => {
+        const platformCards = Array.from(
+          document.querySelectorAll('a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform')
+        ).map(card => {
           const href = card.getAttribute('href') || '';
           const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';
-          const scoreMatch = card.textContent?.match(/([0-9]{1,3})\s*$/) || card.textContent?.match(/Critic Reviews\s*([0-9]{1,3})/i);
-          const score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
+          
+          // Extract numeric score from the last numeric span (Nuxt score badge) or text fallback
+          const spans = Array.from(card.querySelectorAll('span'));
+          const scoreSpan = spans.reverse().find(s => /^\d{1,3}$/.test(s.textContent?.trim() || ''));
+          const score = scoreSpan
+            ? parseInt(scoreSpan.textContent!.trim(), 10)
+            : (() => {
+                const m = card.textContent?.match(/([0-9]{1,3})\s*$/) || card.textContent?.match(/Critic Reviews\s*([0-9]{1,3})/i);
+                return m ? parseInt(m[1], 10) : null;
+              })();
+
           return {
             platformParam,
             score
           };
-        }).filter(c => c.platformParam && c.score !== null);
-
-        // Fallback: check other platform links if specific cards were not found
-        if (platformCards.length === 0) {
-          const platformLinks = Array.from(document.querySelectorAll('a[href*="critic-reviews?platform="], a[href*="critic-reviews/?platform="]'));
-          const seen = new Set<string>();
-          for (const a of platformLinks) {
-            const href = a.getAttribute('href') || '';
-            const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';
-            if (platformParam && !seen.has(platformParam.toLowerCase())) {
-              seen.add(platformParam.toLowerCase());
-              const scoreMatch = a.textContent?.match(/([0-9]{1,3})/);
-              platformCards.push({
-                platformParam,
-                score: scoreMatch ? parseInt(scoreMatch[1], 10) : metascoreFromLd
-              });
-            }
-          }
-        }
+        }).filter(c => c.platformParam && c.score !== null && c.score >= 1 && c.score <= 100);
 
         // 2. Look for userscore in DOM
         let userscore: number | null = null;
