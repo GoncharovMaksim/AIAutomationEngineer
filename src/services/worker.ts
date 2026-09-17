@@ -26,10 +26,19 @@ export class CrawlWorker extends EventEmitter {
   /**
    * Main entrypoint for processing 20 games
    */
-  async runJob(isManual = false): Promise<boolean> {
+  async runJob(isManual = false, deepPlatformScrapingOverride?: boolean): Promise<boolean> {
     if (this.isRunning) {
       await this.log('warn', 'Worker run requested, but a job is already in progress.');
       return false;
+    }
+
+    if (deepPlatformScrapingOverride !== undefined) {
+      await this.log(
+        'info',
+        `Platform scraping strategy: ${
+          deepPlatformScrapingOverride ? '🌐 DEEP (individual platform subpages)' : '⚡ FAST (Nuxt 3 hydration)'
+        }`
+      );
     }
 
     this.isRunning = true;
@@ -147,7 +156,7 @@ export class CrawlWorker extends EventEmitter {
 
         try {
           // 1. Scrape Metacritic details
-          const scraped = await metacriticScraper.scrapeGameDetails(url, today);
+          const scraped = await metacriticScraper.scrapeGameDetails(url, today, deepPlatformScrapingOverride);
           if (!scraped) {
             await this.log('warn', `Could not parse data for ${url}, skipping.`);
             // Replenish candidate queue if running low

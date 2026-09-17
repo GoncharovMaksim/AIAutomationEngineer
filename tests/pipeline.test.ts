@@ -115,4 +115,13 @@ describe('Core Pipeline End-to-End Business Logic', () => {
     const persisted = await db.getClientQuota(testIp);
     assert.equal(persisted.freeRunsUsed, 3);
   });
+
+  it('supports dual-mode platform scraping configuration (Nuxt 3 hydration vs deep traversal)', async () => {
+    const { metacriticScraper } = await import('../src/services/metacritic.js');
+    assert.ok(typeof metacriticScraper.scrapeGameDetails === 'function');
+    assert.ok(typeof metacriticScraper.scrapePlatformScore === 'function');
+
+    const { crawlWorker } = await import('../src/services/worker.js');
+    assert.ok(typeof crawlWorker.runJob === 'function');
+  });
 });

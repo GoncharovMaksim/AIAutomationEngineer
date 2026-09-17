@@ -181,14 +181,20 @@ export function App() {
   }, [fetchGames, fetchAuthStatus]);
 
   // Force Run Handler
-  const handleForceRun = async () => {
+  const handleForceRun = async (deepScraping?: boolean) => {
     try {
       setIsRunning(true);
       const token = localStorage.getItem('metacritic_admin_token') || '';
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
       if (token) headers['x-admin-key'] = token;
 
-      const res = await fetch('/api/worker/run', { method: 'POST', headers });
+      const res = await fetch('/api/worker/run', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ deepScraping })
+      });
       const json = await res.json();
 
       if (!res.ok) {

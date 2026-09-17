@@ -270,8 +270,11 @@ export function createApp() {
       currentRunsUsed = updated.freeRunsUsed;
     }
 
+    const { deepScraping } = req.body || {};
+    const deepScrapingOverride = typeof deepScraping === 'boolean' ? deepScraping : undefined;
+
     // Launch worker asynchronously
-    crawlWorker.runJob(true).catch(err => {
+    crawlWorker.runJob(true, deepScrapingOverride).catch(err => {
       console.error('[API] Worker run error:', err);
     });
 

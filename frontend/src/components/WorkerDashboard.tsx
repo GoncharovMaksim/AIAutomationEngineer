@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import type { CrawlState, WorkerLog, WorkerProgressPayload } from '../types';
 import {
   Activity,
@@ -9,7 +9,9 @@ import {
   Database,
   X,
   ShieldCheck,
-  Key
+  Key,
+  Zap,
+  Globe
 } from 'lucide-react';
 
 interface WorkerDashboardProps {
@@ -22,7 +24,7 @@ interface WorkerDashboardProps {
   totalGames: number;
   isAdmin: boolean;
   freeRunsRemaining: number;
-  onForceRun: () => void;
+  onForceRun: (deepScraping?: boolean) => void;
   onOpenAuth: () => void;
 }
 
@@ -40,6 +42,7 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
   onOpenAuth
 }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
+  const [deepScraping, setDeepScraping] = useState<boolean>(false);
 
   // Auto-scroll to bottom of logs
   useEffect(() => {
@@ -221,10 +224,63 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 )}
               </div>
 
+              {/* Platform Scraping Strategy Selector */}
+              <div className="bg-slate-950/80 border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-sky-400" />
+                    Режим обхода платформ:
+                  </span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">
+                    Dual Strategy
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={isRunning}
+                    onClick={() => setDeepScraping(false)}
+                    className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      !deepScraping
+                        ? 'bg-amber-500/10 border-amber-500/50 text-white shadow-sm ring-1 ring-amber-500/30'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Zap className={`w-3.5 h-3.5 ${!deepScraping ? 'text-amber-400' : 'text-slate-500'}`} />
+                      <span className="text-xs font-bold">Быстрый (Nuxt 3 Hydration)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                      1 запрос на игру. Оценки всех платформ извлекаются из Vue SSR карусели. Быстро и надежно.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isRunning}
+                    onClick={() => setDeepScraping(true)}
+                    className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      deepScraping
+                        ? 'bg-sky-500/10 border-sky-500/50 text-white shadow-sm ring-1 ring-sky-500/30'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Layers className={`w-3.5 h-3.5 ${deepScraping ? 'text-sky-400' : 'text-slate-500'}`} />
+                      <span className="text-xs font-bold">Глубокий (Per-Platform Pages)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                      Отдельный переход на страницу каждой платформы (/critic-reviews/?platform=...) для детальной валидации.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
               <button
-                onClick={onForceRun}
+                onClick={() => onForceRun(deepScraping)}
                 disabled={isRunning}
-                className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg cursor-pointer ${
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-lg cursor-pointer ${
                   isRunning
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                     : 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 active:scale-95 shadow-orange-500/20'
@@ -238,7 +294,11 @@ export const WorkerDashboard: React.FC<WorkerDashboardProps> = ({
                 ) : (
                   <>
                     <Play className="w-4 h-4 fill-current" />
-                    <span>Запустить сбор 20 игр прямо сейчас</span>
+                    <span>
+                      {deepScraping
+                        ? 'Запустить глубокий сбор 20 игр (с открытием платформ)'
+                        : 'Запустить сбор 20 игр прямо сейчас'}
+                    </span>
                   </>
                 )}
               </button>

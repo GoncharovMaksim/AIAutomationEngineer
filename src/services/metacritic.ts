@@ -208,12 +208,11 @@ export class MetacriticScraper {
     });
   }
 
-  /**
-   * 3. Scrape full game details from game page
-   */
-  async scrapeGameDetails(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> { return this.scrapeGamePage(gameUrl, todayDate); }
+  async scrapeGameDetails(gameUrl: string, todayDate: string, deepScrapingOverride?: boolean): Promise<ScrapedGameData | null> { 
+    return this.scrapeGamePage(gameUrl, todayDate, deepScrapingOverride); 
+  }
 
-  async scrapeGamePage(gameUrl: string, todayDate: string): Promise<ScrapedGameData | null> {
+  async scrapeGamePage(gameUrl: string, todayDate: string, deepScrapingOverride?: boolean): Promise<ScrapedGameData | null> {
     try {
       return await this.withPageRetry(async (page) => {
         console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
@@ -356,14 +355,16 @@ export class MetacriticScraper {
 
       // Map platforms with individual scores
       const platforms: GamePlatformInput[] = [];
+      const useDeepScraping = deepScrapingOverride !== undefined ? deepScrapingOverride : config.deepPlatformScraping;
 
       if (pageInfo.platformCards && pageInfo.platformCards.length > 0) {
         for (const card of pageInfo.platformCards) {
           let metascore = card.score;
           let userscore = pageInfo.userscore;
 
-          // Optional deep per-platform subpage traversal if DEEP_PLATFORM_SCRAPING is enabled
-          if (config.deepPlatformScraping && card.platformParam) {
+          // Optional deep per-platform subpage traversal if deep scraping is active
+          if (useDeepScraping && card.platformParam) {
+            console.log(`[DeepScraper] 🌐 Deep traversal requested for ${slug} on platform '${card.platformParam}'`);
             const deep = await this.scrapePlatformScore(slug, card.platformParam);
             if (deep.metascore !== null) metascore = deep.metascore;
             if (deep.userscore !== null) userscore = deep.userscore;
@@ -381,10 +382,21 @@ export class MetacriticScraper {
       for (const p of pageInfo.platformsList) {
         const norm = formatPlatformName(p);
         if (!platforms.some(item => item.platform.toLowerCase() === norm.toLowerCase())) {
+          let metascore = pageInfo.metascoreFromLd;
+          let userscore = pageInfo.userscore;
+
+          if (useDeepScraping) {
+            const param = p.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            console.log(`[DeepScraper] 🌐 Deep traversal for unlisted card platform '${param}'`);
+            const deep = await this.scrapePlatformScore(slug, param);
+            if (deep.metascore !== null) metascore = deep.metascore;
+            if (deep.userscore !== null) userscore = deep.userscore;
+          }
+
           platforms.push({
             platform: norm,
-            metascore: pageInfo.metascoreFromLd,
-            userscore: pageInfo.userscore
+            metascore,
+            userscore
           });
         }
       }
@@ -464,24 +476,35 @@ export class MetacriticScraper {
     const url = `https://www.metacritic.com/game/${slug}/critic-reviews/?platform=${platformParam}`;
     try {
       return await this.withPageRetry(async (page) => {
+        console.log(`[DeepScraper] Opening subpage: ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
-        return page.evaluate(() => {
+        const result = await page.evaluate(() => {
           let ld: any = null;
           try {
             const s = document.querySelector('script[type="application/ld+json"]');
             if (s?.textContent) ld = JSON.parse(s.textContent);
           } catch {}
-          const metascore = ld?.aggregateRating?.ratingValue ? parseInt(ld.aggregateRating.ratingValue, 10) : null;
+          let metascore = ld?.aggregateRating?.ratingValue ? parseInt(ld.aggregateRating.ratingValue, 10) : null;
+          if (metascore === null) {
+            const metaEl = document.querySelector('[data-testid="score-critic"], .c-siteReviewScore_critic, .c-productScoreInfo_scoreNumber');
+            if (metaEl?.textContent) {
+              const val = parseInt(metaEl.textContent.trim(), 10);
+              if (!isNaN(val) && val >= 0 && val <= 100) metascore = val;
+            }
+          }
           let userscore: number | null = null;
-          const userEl = document.querySelector('[data-testid="score-user"], [class*="c-siteReviewScore_user"]');
+          const userEl = document.querySelector('[data-testid="score-user"], [class*="c-siteReviewScore_user"], [class*="userScore"]');
           if (userEl?.textContent) {
             const val = parseFloat(userEl.textContent.trim());
             if (!isNaN(val) && val >= 0 && val <= 10) userscore = val;
           }
           return { metascore, userscore };
         });
+        console.log(`[DeepScraper] Result for ${slug} [${platformParam}]: Metascore=${result.metascore}, Userscore=${result.userscore}`);
+        return result;
       }, 2);
-    } catch {
+    } catch (err: any) {
+      console.warn(`[DeepScraper] Failed to scrape platform score for ${url}: ${err.message}`);
       return { metascore: null, userscore: null };
     }
   }
