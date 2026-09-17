@@ -8,7 +8,10 @@ export function getProxiedImageUrl(url?: string | null): string {
   if (
     url.includes('metacritic.com') ||
     url.includes('cbsistatic.com') ||
-    url.includes('fandom.com')
+    url.includes('fandom.com') ||
+    url.includes('ytimg.com') ||
+    url.includes('youtube.com') ||
+    url.includes('ggpht.com')
   ) {
     return `/api/proxy/image?url=${encodeURIComponent(url)}`;
   }

@@ -26,8 +26,10 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
   const [game, setGame] = useState<GameDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [playVideo, setPlayVideo] = useState(false);
 
   useEffect(() => {
+    setPlayVideo(false);
     if (!gameId) {
       setGame(null);
       return;
@@ -331,27 +333,47 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                 {game.youtube ? (
                   <div className="flex flex-col md:flex-row gap-4 items-start">
                     {/* Video Embed or Thumbnail */}
-                    <div className="w-full md:w-5/12 aspect-video bg-black rounded-xl overflow-hidden shadow-md flex items-center justify-center">
-                      {game.youtube.video_id ? (
+                    <div className="w-full md:w-5/12 aspect-video bg-slate-900 rounded-xl overflow-hidden shadow-md flex items-center justify-center relative group">
+                      {game.youtube.video_id && playVideo ? (
                         <iframe
-                          src={`https://www.youtube-nocookie.com/embed/${game.youtube.video_id}`}
+                          src={`https://www.youtube-nocookie.com/embed/${game.youtube.video_id}?autoplay=1`}
                           title={game.youtube.video_title}
                           className="w-full h-full border-0"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           allowFullScreen
                         />
                       ) : (
-                        <a
-                          href={game.youtube.video_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full h-full flex flex-col items-center justify-center bg-slate-900 hover:bg-slate-850 p-4 text-center group cursor-pointer"
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setPlayVideo(true)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setPlayVideo(true);
+                            }
+                          }}
+                          className="w-full h-full relative flex items-center justify-center cursor-pointer group bg-slate-950"
                         >
-                          <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg shadow-red-600/30">
-                            <Play className="w-6 h-6 text-white fill-current ml-0.5" />
+                          {game.youtube.video_id && (
+                            <img
+                              src={getProxiedImageUrl(`https://i.ytimg.com/vi/${game.youtube.video_id}/hqdefault.jpg`)}
+                              alt={game.youtube.video_title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex flex-col items-center justify-center">
+                            <div className="w-14 h-14 rounded-full bg-red-600 group-hover:bg-red-500 flex items-center justify-center shadow-xl shadow-red-600/40 group-hover:scale-110 transition-all">
+                              <Play className="w-7 h-7 text-white fill-current ml-0.5" />
+                            </div>
+                            <span className="mt-2 text-[11px] font-semibold text-white/90 bg-black/70 px-2.5 py-1 rounded-full backdrop-blur-sm border border-white/10">
+                              Воспроизвести летсплей
+                            </span>
                           </div>
-                          <span className="text-xs font-semibold text-slate-200 group-hover:text-white">Смотреть летсплей на YouTube</span>
-                        </a>
+                        </div>
                       )}
                     </div>
 
@@ -424,7 +446,7 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                         <div className="aspect-[16/10] w-full rounded-lg overflow-hidden bg-slate-900 mb-2 relative">
                           {sim.cover_image ? (
                             <img
-                              src={sim.cover_image}
+                              src={getProxiedImageUrl(sim.cover_image)}
                               alt={sim.title}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                             />
