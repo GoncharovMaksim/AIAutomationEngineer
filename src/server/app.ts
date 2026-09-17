@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { gameRepository } from '../db/gameRepository.js';
 import { crawlWorker } from '../services/worker.js';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import crypto from 'crypto';
 
 export function createApp() {
   const app = express();
@@ -14,8 +15,8 @@ export function createApp() {
   app.use(express.json());
 
   // Persistent IP Quota Tracker via GameRepository
-  let lastManualRunTimestamp = 0;
   const MANUAL_RUN_COOLDOWN_MS = 60 * 1000;
+  const activeAdminSessions = new Map<string, number>();
 
   function getClientIp(req: express.Request): string {
     const forwarded = req.headers['x-forwarded-for'];
@@ -27,7 +28,14 @@ export function createApp() {
 
   function isAdmin(req: express.Request): boolean {
     const token = req.headers['x-admin-key'] || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
-    return token === config.adminSecret;
+    if (!token || typeof token !== 'string') return false;
+    // Master admin key for CI/scripts OR active short-lived session token
+    if (token === config.adminSecret) return true;
+    const expiresAt = activeAdminSessions.get(token);
+    if (expiresAt && expiresAt > Date.now()) {
+      return true;
+    }
+    return false;
   }
 
   // Public API Rate Limiter (sliding window per IP)
@@ -113,13 +121,15 @@ export function createApp() {
     });
   });
 
-  // Admin Login endpoint
+  // Admin Login endpoint (generates secure, short-lived session token)
   app.post('/api/auth/login', (req, res) => {
     const { password } = req.body || {};
     if (password === config.adminSecret) {
+      const sessionToken = 'adm_' + crypto.randomBytes(24).toString('hex');
+      activeAdminSessions.set(sessionToken, Date.now() + 24 * 60 * 60 * 1000);
       return res.json({
         success: true,
-        token: config.adminSecret,
+        token: sessionToken,
         message: 'Авторизация администратора успешна'
       });
     }
@@ -300,8 +310,7 @@ export function createApp() {
     }
 
     const now = Date.now();
-    const lastRunForUser = admin ? lastManualRunTimestamp : Math.max(lastManualRunTimestamp, quota.lastRunAt);
-    const elapsed = now - lastRunForUser;
+    const elapsed = now - (quota.lastRunAt || 0);
 
     if (elapsed < MANUAL_RUN_COOLDOWN_MS) {
       const waitSeconds = Math.ceil((MANUAL_RUN_COOLDOWN_MS - elapsed) / 1000);
@@ -311,11 +320,10 @@ export function createApp() {
       });
     }
 
-    lastManualRunTimestamp = now;
-
     let currentRunsUsed = quota.freeRunsUsed;
+    // Always persist last_run_at timestamp to database to ensure cooldown survives process restarts
+    const updated = await gameRepository.recordClientRun(admin ? 'admin' : ip);
     if (!admin) {
-      const updated = await gameRepository.recordClientRun(ip);
       currentRunsUsed = updated.freeRunsUsed;
     }
 

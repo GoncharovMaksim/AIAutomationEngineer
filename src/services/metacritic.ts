@@ -218,7 +218,7 @@ export class MetacriticScraper {
         console.log(`[Metacritic] Scraping game page: ${gameUrl} ...`);
         await page.goto(gameUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector(
-          'a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform',
+          'a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform, [data-testid*="platform-card"], [class*="product-score-card"]',
           { timeout: 8000 }
         ).catch(() => {});
 
@@ -261,7 +261,7 @@ export class MetacriticScraper {
 
         // 1. Check for specific platform score cards in "All Platforms" section
         const platformCards = Array.from(
-          document.querySelectorAll('a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform')
+          document.querySelectorAll('a.product-score-card--platform, a[href*="critic-reviews"][href*="platform="], .product-score-card--platform, [data-testid*="platform-card"], [class*="product-score-card"]')
         ).map(card => {
           const href = card.getAttribute('href') || '';
           const platformParam = href.match(/platform=([a-z0-9-]+)/i)?.[1] || '';

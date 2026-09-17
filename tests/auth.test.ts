@@ -67,17 +67,25 @@ describe('Auth, Quota & Health API Endpoints', () => {
     assert.strictEqual(body.success, false);
   });
 
-  it('POST /api/auth/login accepts demo admin password and returns token', async () => {
+  it('POST /api/auth/login accepts demo admin password and returns secure session token', async () => {
     const { status, body } = await request('/api/auth/login', {
       method: 'POST',
       body: { password: 'skytec-admin-2026' }
     });
     assert.strictEqual(status, 200);
     assert.strictEqual(body.success, true);
-    assert.strictEqual(body.token, 'skytec-admin-2026');
+    assert.ok(body.token && body.token.startsWith('adm_'), 'Token must be an opaque session token');
+
+    // Verify session token works for authentication
+    const authCheck = await request('/api/auth/status', {
+      headers: { 'x-admin-key': body.token }
+    });
+    assert.strictEqual(authCheck.status, 200);
+    assert.strictEqual(authCheck.body.data.isAdmin, true);
+    assert.strictEqual(authCheck.body.data.freeRunsRemaining, 999);
   });
 
-  it('GET /api/auth/status detects admin header', async () => {
+  it('GET /api/auth/status detects master admin key', async () => {
     const { status, body } = await request('/api/auth/status', {
       headers: { 'x-admin-key': 'skytec-admin-2026' }
     });
