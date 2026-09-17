@@ -239,12 +239,19 @@ export class MetacriticScraper {
           document.querySelector('meta[name="twitter:image"]')?.getAttribute('content') ||
           (document.querySelector('img[src*="catalog"], img[src*="hub"], .c-productHero_image img') as HTMLImageElement)?.src || '';
 
-        // Video URL (trailer)
-        let videoUrl = ld?.trailer?.embedUrl || ld?.trailer?.contentUrl || '';
+        // Video URL (trailer) with resilient multi-step fallback chain:
+        // 1. JSON-LD trailer embedUrl / contentUrl / url
+        // 2. DOM iframe (YouTube/Vimeo) / video tag / video anchor
+        // 3. YouTube search URL fallback if title is present
+        let videoUrl = ld?.trailer?.embedUrl || ld?.trailer?.contentUrl || ld?.trailer?.url || '';
         if (!videoUrl) {
-          const videoEl = document.querySelector('video, iframe[src*="youtube"], iframe[src*="video"], a[href*="video"]');
+          const videoEl = document.querySelector('iframe[src*="youtube"], iframe[src*="video"], video, a[href*="youtube.com/watch"], a[href*="youtu.be"], a[href*="video"]');
           if (videoEl?.tagName === 'IFRAME') videoUrl = (videoEl as HTMLIFrameElement).src;
           else if (videoEl?.tagName === 'VIDEO') videoUrl = (videoEl as HTMLVideoElement).src;
+          else if (videoEl?.tagName === 'A') videoUrl = (videoEl as HTMLAnchorElement).href;
+        }
+        if (!videoUrl && title) {
+          videoUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' official trailer')}`;
         }
 
         // Developer

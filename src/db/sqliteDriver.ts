@@ -100,11 +100,17 @@ export class SqliteDriver implements IGameRepository {
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE TABLE IF NOT EXISTS ip_quotas (
+        CREATE TABLE IF NOT EXISTS ip_quotas (
         ip TEXT PRIMARY KEY,
         free_runs_used INTEGER DEFAULT 0,
         last_run_at INTEGER DEFAULT 0,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_sessions (
+        token TEXT PRIMARY KEY,
+        expires_at INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
@@ -483,6 +489,25 @@ export class SqliteDriver implements IGameRepository {
         updated_at = CURRENT_TIMESTAMP
     `).run(ip, now);
     return this.getClientQuota(ip);
+  }
+
+  async createAdminSession(token: string, expiresAt: number): Promise<void> {
+    const db = this.getClient();
+    db.prepare(`
+      INSERT INTO admin_sessions (token, expires_at) VALUES (?, ?)
+      ON CONFLICT(token) DO UPDATE SET expires_at = excluded.expires_at
+    `).run(token, expiresAt);
+  }
+
+  async isValidAdminSession(token: string): Promise<boolean> {
+    const db = this.getClient();
+    const row = db.prepare('SELECT expires_at FROM admin_sessions WHERE token = ?').get(token) as { expires_at: number } | undefined;
+    if (!row) return false;
+    if (Date.now() > row.expires_at) {
+      db.prepare('DELETE FROM admin_sessions WHERE token = ?').run(token);
+      return false;
+    }
+    return true;
   }
 
   async checkpointWal(): Promise<void> {

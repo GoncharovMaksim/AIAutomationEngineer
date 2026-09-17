@@ -16,7 +16,6 @@ export function createApp() {
 
   // Persistent IP Quota Tracker via GameRepository
   const MANUAL_RUN_COOLDOWN_MS = 60 * 1000;
-  const activeAdminSessions = new Map<string, number>();
 
   function getClientIp(req: express.Request): string {
     const forwarded = req.headers['x-forwarded-for'];
@@ -26,16 +25,13 @@ export function createApp() {
     return req.ip || req.socket.remoteAddress || '127.0.0.1';
   }
 
-  function isAdmin(req: express.Request): boolean {
+  async function isAdmin(req: express.Request): Promise<boolean> {
     const token = req.headers['x-admin-key'] || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
     if (!token || typeof token !== 'string') return false;
-    // Master admin key for CI/scripts OR active short-lived session token
+    // Master admin key for CI/scripts
     if (token === config.adminSecret) return true;
-    const expiresAt = activeAdminSessions.get(token);
-    if (expiresAt && expiresAt > Date.now()) {
-      return true;
-    }
-    return false;
+    // Persistent session token from database
+    return await gameRepository.isValidAdminSession(token);
   }
 
   // Public API Rate Limiter (sliding window per IP)
@@ -53,8 +49,8 @@ export function createApp() {
   }, 5 * 60 * 1000);
   if (cleanupInterval.unref) cleanupInterval.unref();
 
-  const publicApiRateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (isAdmin(req)) return next();
+  const publicApiRateLimiter = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (await isAdmin(req)) return next();
 
     const ip = getClientIp(req);
     const now = Date.now();
@@ -105,7 +101,7 @@ export function createApp() {
 
   // Auth Status check
   app.get('/api/auth/status', async (req, res) => {
-    const admin = isAdmin(req);
+    const admin = await isAdmin(req);
     const ip = getClientIp(req);
     const quota = await gameRepository.getClientQuota(ip);
     const remaining = admin ? 999 : Math.max(0, config.demoMaxFreeRuns - quota.freeRunsUsed);
@@ -121,12 +117,13 @@ export function createApp() {
     });
   });
 
-  // Admin Login endpoint (generates secure, short-lived session token)
-  app.post('/api/auth/login', (req, res) => {
+  // Admin Login endpoint (generates secure session token stored persistently in DB)
+  app.post('/api/auth/login', async (req, res) => {
     const { password } = req.body || {};
     if (password === config.adminSecret) {
       const sessionToken = 'adm_' + crypto.randomBytes(24).toString('hex');
-      activeAdminSessions.set(sessionToken, Date.now() + 24 * 60 * 60 * 1000);
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+      await gameRepository.createAdminSession(sessionToken, expiresAt);
       return res.json({
         success: true,
         token: sessionToken,
@@ -296,7 +293,7 @@ export function createApp() {
       });
     }
 
-    const admin = isAdmin(req);
+    const admin = await isAdmin(req);
     const ip = getClientIp(req);
     const quota = await gameRepository.getClientQuota(ip);
 
@@ -346,8 +343,8 @@ export function createApp() {
   });
 
   // Admin Restart endpoint (allows remote restart without SSH)
-  app.post('/api/admin/restart', (req, res) => {
-    if (!isAdmin(req)) {
+  app.post('/api/admin/restart', async (req, res) => {
+    if (!await isAdmin(req)) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     res.json({ success: true, message: 'Server restarting...' });
@@ -359,7 +356,7 @@ export function createApp() {
 
   // Admin Database Reset endpoint (clears all games and starts clean 20-game crawl)
   app.post('/api/admin/reset-database', async (req, res) => {
-    if (!isAdmin(req)) {
+    if (!await isAdmin(req)) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
     try {

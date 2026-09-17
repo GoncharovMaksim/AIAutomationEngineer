@@ -105,6 +105,12 @@ export class PostgresDriver implements IGameRepository {
           last_run_at BIGINT DEFAULT 0,
           updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+          token TEXT PRIMARY KEY,
+          expires_at BIGINT NOT NULL,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
       `);
 
       try {
@@ -489,6 +495,27 @@ export class PostgresDriver implements IGameRepository {
         updated_at = CURRENT_TIMESTAMP
     `, [ip, now]);
     return this.getClientQuota(ip);
+  }
+
+  async createAdminSession(token: string, expiresAt: number): Promise<void> {
+    const pool = this.getPool();
+    await pool.query(`
+      INSERT INTO admin_sessions (token, expires_at) VALUES ($1, $2)
+      ON CONFLICT(token) DO UPDATE SET expires_at = EXCLUDED.expires_at
+    `, [token, expiresAt]);
+  }
+
+  async isValidAdminSession(token: string): Promise<boolean> {
+    const pool = this.getPool();
+    const res = await pool.query('SELECT expires_at FROM admin_sessions WHERE token = $1', [token]);
+    const row = res.rows[0];
+    if (!row) return false;
+    const expiresAt = Number(row.expires_at);
+    if (Date.now() > expiresAt) {
+      await pool.query('DELETE FROM admin_sessions WHERE token = $1', [token]);
+      return false;
+    }
+    return true;
   }
 
   async checkpointWal(): Promise<void> {

@@ -99,6 +99,8 @@ export interface IGameRepository {
   pruneOldLogs(keepCount?: number): Promise<void>;
   getClientQuota(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }>;
   recordClientRun(ip: string): Promise<{ freeRunsUsed: number; lastRunAt: number }>;
+  createAdminSession(token: string, expiresAt: number): Promise<void>;
+  isValidAdminSession(token: string): Promise<boolean>;
   checkpointWal(): Promise<void>;
   resetDatabase(): Promise<void>;
 }

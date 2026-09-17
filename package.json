@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "test": "tsx --test tests/auth.test.ts tests/config.test.ts tests/db.test.ts tests/metacritic.test.ts tests/pipeline.test.ts tests/rotation.test.ts tests/similarity.test.ts tests/logs.test.ts",
+    "test": "tsx --test tests/auth.test.ts tests/config.test.ts tests/db.test.ts tests/metacritic.test.ts tests/pipeline.test.ts tests/rotation.test.ts tests/similarity.test.ts tests/logs.test.ts tests/gemini.test.ts tests/youtube.test.ts tests/ws.test.ts tests/a11y.test.ts",
     "test:live": "tsx --test tests/live-metacritic.test.ts",
     "test:all": "npm test && npm run test:live",
     "build": "tsc",

@@ -198,26 +198,38 @@ export class CrawlWorker extends EventEmitter {
           await this.log('success', `Saved game "${gameInput.title}" to database.`);
 
           // 4. AI Summarize Critic and User Reviews (deduplicate via review hash)
-          const reviewsPayload = `${criticReviews.join('||')}###${userReviews.join('||')}`;
-          const reviewsHash = crypto.createHash('sha256').update(reviewsPayload).digest('hex');
-
-          if (existingGame?.reviews && existingGame.reviews.reviews_hash === reviewsHash) {
-            await this.log('info', `Reviews for "${gameInput.title}" unchanged. Reusing cached AI summary (tokens saved).`);
+          if (criticReviews.length === 0 && userReviews.length === 0) {
+            await this.log('info', `No critic or user reviews found for "${gameInput.title}". Skipping AI summarization to avoid hallucinations.`);
+            await gameRepository.upsertReviewsSummary({
+              gameId: gameInput.id,
+              criticsSummaryPros: 'Отзывы критиков пока не опубликованы или недоступны на Metacritic.',
+              criticsSummaryCons: 'Недостаточно рецензий для формирования консенсуса критиков.',
+              usersSummaryPros: 'Отзывы игроков пока не опубликованы или недоступны на Metacritic.',
+              usersSummaryCons: 'Недостаточно отзывов пользователей для анализа.',
+              reviewsHash: 'no_reviews_available'
+            });
           } else {
-            await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/20)`, stepIndex, 20);
-            try {
-              const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
-              await gameRepository.upsertReviewsSummary({
-                gameId: gameInput.id,
-                criticsSummaryPros: reviewsSummary.criticsSummaryPros,
-                criticsSummaryCons: reviewsSummary.criticsSummaryCons,
-                usersSummaryPros: reviewsSummary.usersSummaryPros,
-                usersSummaryCons: reviewsSummary.usersSummaryCons,
-                reviewsHash
-              });
-              await this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
-            } catch (sumErr: any) {
-              await this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
+            const reviewsPayload = `${criticReviews.join('||')}###${userReviews.join('||')}`;
+            const reviewsHash = crypto.createHash('sha256').update(reviewsPayload).digest('hex');
+
+            if (existingGame?.reviews && existingGame.reviews.reviews_hash === reviewsHash) {
+              await this.log('info', `Reviews for "${gameInput.title}" unchanged. Reusing cached AI summary (tokens saved).`);
+            } else {
+              await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/20)`, stepIndex, 20);
+              try {
+                const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
+                await gameRepository.upsertReviewsSummary({
+                  gameId: gameInput.id,
+                  criticsSummaryPros: reviewsSummary.criticsSummaryPros,
+                  criticsSummaryCons: reviewsSummary.criticsSummaryCons,
+                  usersSummaryPros: reviewsSummary.usersSummaryPros,
+                  usersSummaryCons: reviewsSummary.usersSummaryCons,
+                  reviewsHash
+                });
+                await this.log('success', `Generated AI reviews summary for "${gameInput.title}".`);
+              } catch (sumErr: any) {
+                await this.log('warn', `Failed to summarize reviews for "${gameInput.title}": ${sumErr.message}`);
+              }
             }
           }
 
