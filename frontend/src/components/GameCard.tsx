@@ -2,6 +2,7 @@ import React from 'react';
 import type { GameItem } from '../types';
 import { ScoreBadge } from './ScoreBadge';
 import { Layers, Sparkles } from 'lucide-react';
+import { getProxiedImageUrl } from '../utils/imageUrl';
 
 interface GameCardProps {
   game: GameItem;
@@ -27,13 +28,12 @@ export const GameCard: React.FC<GameCardProps> = ({ game, onClick }) => {
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-950">
         {game.cover_image ? (
           <img
-            src={game.cover_image}
+            src={getProxiedImageUrl(game.cover_image)}
             alt={game.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             loading="lazy"
             onError={(e) => {
-              (e.target as HTMLImageElement).src =
-                'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80';
+              (e.target as HTMLImageElement).style.opacity = '0';
             }}
           />
         ) : (

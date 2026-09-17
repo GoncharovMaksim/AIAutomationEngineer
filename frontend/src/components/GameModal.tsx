@@ -14,6 +14,7 @@ import {
   Layers,
   Eye
 } from 'lucide-react';
+import { getProxiedImageUrl } from '../utils/imageUrl';
 
 interface GameModalProps {
   gameId: string | null;
@@ -105,7 +106,7 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
               {game.cover_image && (
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                   <img
-                    src={game.cover_image}
+                    src={getProxiedImageUrl(game.cover_image)}
                     alt=""
                     aria-hidden="true"
                     className="w-full h-full object-cover blur-xl opacity-25 scale-110 transform"
@@ -120,12 +121,11 @@ export const GameModal: React.FC<GameModalProps> = ({ gameId, onClose, onSelectG
                 <div className="relative w-28 sm:w-36 aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 bg-slate-950 flex-shrink-0 group">
                   {game.cover_image ? (
                     <img
-                      src={game.cover_image}
+                      src={getProxiedImageUrl(game.cover_image)}
                       alt={game.title}
                       className="w-full h-full object-cover"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80';
+                        (e.target as HTMLImageElement).style.opacity = '0';
                       }}
                     />
                   ) : (

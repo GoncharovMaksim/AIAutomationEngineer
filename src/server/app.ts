@@ -5,6 +5,7 @@ import fs from 'fs';
 import { config } from '../config.js';
 import { gameRepository } from '../db/gameRepository.js';
 import { crawlWorker } from '../services/worker.js';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 
 interface ClientQuota {
   freeRunsUsed: number;
@@ -83,6 +84,89 @@ export function createApp() {
       success: false,
       message: 'Неверный пароль. Для проверки используйте демо-пароль: skytec-admin-2026'
     });
+  });
+
+  // Simple in-memory image cache to make repeated image requests instant
+  const imageCache = new Map<string, { buffer: Buffer; contentType: string; expiresAt: number }>();
+
+  // Image Proxy endpoint to bypass regional CDN blocks & hotlinking restrictions
+  app.get('/api/proxy/image', async (req, res) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+      return res.status(400).send('Invalid url parameter');
+    }
+
+    const cached = imageCache.get(imageUrl);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(cached.buffer);
+    }
+
+    const maxAttempts = config.proxies.length > 0 ? 3 : 1;
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const proxy = config.selectAvailableProxy();
+      try {
+        const fetchOptions: any = {
+          signal: AbortSignal.timeout(6000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Referer': 'https://www.metacritic.com/',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          }
+        };
+        if (proxy) {
+          fetchOptions.dispatcher = new ProxyAgent(proxy.url);
+        }
+
+        const imgRes = await undiciFetch(imageUrl, fetchOptions);
+        if (imgRes.ok) {
+          if (proxy) config.markProxySuccess(proxy.url);
+          const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+          const arrayBuffer = await imgRes.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+
+          imageCache.set(imageUrl, { buffer, contentType, expiresAt: Date.now() + 6 * 3600 * 1000 });
+
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+          return res.send(buffer);
+        } else {
+          lastError = new Error(`HTTP ${imgRes.status} ${imgRes.statusText}`);
+        }
+      } catch (err: any) {
+        if (proxy) config.markProxyFailed(proxy.url);
+        lastError = err;
+      }
+    }
+
+    // Fallback: direct attempt without proxy
+    try {
+      const directRes = await undiciFetch(imageUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://www.metacritic.com/',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        }
+      });
+      if (directRes.ok) {
+        const contentType = directRes.headers.get('content-type') || 'image/jpeg';
+        const arrayBuffer = await directRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        imageCache.set(imageUrl, { buffer, contentType, expiresAt: Date.now() + 6 * 3600 * 1000 });
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(buffer);
+      }
+    } catch (err: any) {
+      lastError = err;
+    }
+
+    console.error(`[ImageProxy] All attempts failed for ${imageUrl}:`, lastError?.message);
+    return res.status(502).send('Failed to proxy image');
   });
 
   // 1. Get all games with search, platform filter, and sorting
