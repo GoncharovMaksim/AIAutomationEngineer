@@ -135,20 +135,29 @@ export class CrawlWorker extends EventEmitter {
         return true;
       }
 
-      // Process each game
+      // Process each game until target 20 games are saved
       let processedInThisRun = 0;
+      let targetIndex = 0;
 
-      for (let i = 0; i < targetUrls.length; i++) {
-        const url = targetUrls[i];
-        const stepIndex = i + 1;
-        await this.log('info', `[${stepIndex}/${targetUrls.length}] Scraping: ${url}`);
-        await this.emitProgress('running', url, `Scraping details (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+      while (processedInThisRun < 20 && targetIndex < targetUrls.length) {
+        const url = targetUrls[targetIndex++];
+        const stepIndex = processedInThisRun + 1;
+        await this.log('info', `[${stepIndex}/20] (Candidate ${targetIndex}/${targetUrls.length}) Scraping: ${url}`);
+        await this.emitProgress('running', url, `Scraping details (${stepIndex}/20)`, stepIndex, 20);
 
         try {
           // 1. Scrape Metacritic details
           const scraped = await metacriticScraper.scrapeGameDetails(url, today);
           if (!scraped) {
             await this.log('warn', `Could not parse data for ${url}, skipping.`);
+            // Replenish candidate queue if running low
+            if (targetUrls.length - targetIndex < 5 && pagesScanned < 15) {
+              const moreUrls = await metacriticScraper.getSeeAllPageUrls(pageToFetch++);
+              pagesScanned++;
+              if (moreUrls && moreUrls.length > 0) {
+                addCandidateUrls(moreUrls);
+              }
+            }
             continue;
           }
 
@@ -179,7 +188,7 @@ export class CrawlWorker extends EventEmitter {
           if (existingGame?.reviews && existingGame.reviews.reviews_hash === reviewsHash) {
             await this.log('info', `Reviews for "${gameInput.title}" unchanged. Reusing cached AI summary (tokens saved).`);
           } else {
-            await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+            await this.emitProgress('running', gameInput.title, `AI Review Analysis (${stepIndex}/20)`, stepIndex, 20);
             try {
               const reviewsSummary = await geminiService.summarizeReviews(gameInput.title, criticReviews, userReviews);
               await gameRepository.upsertReviewsSummary({
@@ -200,7 +209,7 @@ export class CrawlWorker extends EventEmitter {
           if (existingGame?.youtube && existingGame.youtube.video_id) {
             await this.log('info', `YouTube Let's Play for "${gameInput.title}" already analyzed. Preserving existing record.`);
           } else {
-            await this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/${targetUrls.length})`, stepIndex, targetUrls.length);
+            await this.emitProgress('running', gameInput.title, `YouTube Let's Play Analysis (${stepIndex}/20)`, stepIndex, 20);
             try {
               const youtubeResult = await youtubeService.findAndAnalyzeLetsPlay(gameInput.id, gameInput.title);
               if (youtubeResult) {

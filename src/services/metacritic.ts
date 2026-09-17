@@ -16,14 +16,8 @@ export interface ScrapedGameData {
 export class MetacriticScraper {
   private browser: Browser | null = null;
   private pagesOpenedCount = 0;
-  private fallbackToDirect = false;
 
-  private async getBrowser(forceDirect = false): Promise<Browser> {
-    if (forceDirect && !this.fallbackToDirect) {
-      this.fallbackToDirect = true;
-      await this.close();
-    }
-
+  private async getBrowser(): Promise<Browser> {
     // Re-create browser if closed or after 10 page navigations to free memory
     if (this.browser && (!this.browser.connected || this.pagesOpenedCount >= 10)) {
       await this.close();
@@ -43,14 +37,12 @@ export class MetacriticScraper {
         ]
       };
 
-      if (!this.fallbackToDirect) {
-        const proxy = config.getActiveProxyUrl();
-        if (proxy) {
-          try {
-            const u = new URL(proxy);
-            launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
-          } catch {}
-        }
+      const proxy = config.getActiveProxyUrl();
+      if (proxy) {
+        try {
+          const u = new URL(proxy);
+          launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
+        } catch {}
       }
 
       if (config.executablePath) {
@@ -64,26 +56,24 @@ export class MetacriticScraper {
 
   private async createPage(): Promise<Page> {
     let attempts = 0;
-    while (attempts < 2) {
+    while (attempts < 3) {
       try {
         attempts++;
-        const browser = await this.getBrowser(attempts > 1);
+        const browser = await this.getBrowser();
         const page = await browser.newPage();
         this.pagesOpenedCount++;
 
-        if (!this.fallbackToDirect) {
-          const proxy = config.getActiveProxyUrl();
-          if (proxy) {
-            try {
-              const u = new URL(proxy);
-              if (u.username && u.password) {
-                await page.authenticate({
-                  username: decodeURIComponent(u.username),
-                  password: decodeURIComponent(u.password)
-                });
-              }
-            } catch {}
-          }
+        const proxy = config.getActiveProxyUrl();
+        if (proxy) {
+          try {
+            const u = new URL(proxy);
+            if (u.username && u.password) {
+              await page.authenticate({
+                username: decodeURIComponent(u.username),
+                password: decodeURIComponent(u.password)
+              });
+            }
+          } catch {}
         }
 
         await page.setUserAgent(
@@ -91,7 +81,7 @@ export class MetacriticScraper {
         );
         await page.setViewport({ width: 1280, height: 800 });
 
-        // Block images, fonts and media to save bandwidth and speed up page load
+        // Block fonts and media to save bandwidth and speed up page load
         await page.setRequestInterception(true);
         page.on('request', (req) => {
           const type = req.resourceType();
@@ -104,15 +94,16 @@ export class MetacriticScraper {
 
         return page;
       } catch (err: any) {
-        console.warn(`[Metacritic] createPage failed (attempt ${attempts}): ${err.message}. Recycling browser...`);
+        console.warn(`[Metacritic] createPage failed (attempt ${attempts}): ${err.message}. Rotating proxy & recycling browser...`);
+        config.rotateProxy();
         await this.close();
-        if (attempts >= 2) throw err;
+        if (attempts >= 3) throw err;
       }
     }
     throw new Error('[Metacritic] Could not create page after recycling browser.');
   }
 
-  private async withPageRetry<T>(action: (page: Page) => Promise<T>, maxRetries = 3): Promise<T> {
+  private async withPageRetry<T>(action: (page: Page) => Promise<T>, maxRetries = 4): Promise<T> {
     let lastError: any;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       let page: Page | null = null;
