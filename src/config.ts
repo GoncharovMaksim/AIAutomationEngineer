@@ -102,7 +102,6 @@ export const config = {
       const idx = (currentProxyIndex + i) % proxies.length;
       const p = proxies[idx];
       if (!p.failedUntil || now >= p.failedUntil) {
-        currentProxyIndex = (idx + 1) % proxies.length;
         return p;
       }
     }
@@ -119,8 +118,6 @@ export const config = {
     }
     const fallback = proxies[bestIdx];
     fallback.failedUntil = 0; // reset cooldown to avoid stall
-    currentProxyIndex = (bestIdx + 1) % proxies.length;
-    console.info(`[ProxyPool] ℹ️ All proxies were in cooldown; attempting earliest proxy ${fallback.host}:${fallback.port}`);
     return fallback;
   },
 

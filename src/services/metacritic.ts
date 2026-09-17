@@ -16,6 +16,7 @@ export interface ScrapedGameData {
 export class MetacriticScraper {
   private browser: Browser | null = null;
   private pagesOpenedCount = 0;
+  private currentProxyUrl: string | null = null;
 
   private async getBrowser(): Promise<Browser> {
     // Re-create browser if closed or after 10 page navigations to free memory
@@ -25,6 +26,7 @@ export class MetacriticScraper {
 
     if (!this.browser || !this.browser.connected) {
       this.pagesOpenedCount = 0;
+      this.currentProxyUrl = config.getActiveProxyUrl() || null;
       const launchOptions: any = {
         headless: config.headless,
         protocolTimeout: 180_000,
@@ -37,10 +39,9 @@ export class MetacriticScraper {
         ]
       };
 
-      const proxy = config.getActiveProxyUrl();
-      if (proxy) {
+      if (this.currentProxyUrl) {
         try {
-          const u = new URL(proxy);
+          const u = new URL(this.currentProxyUrl);
           launchOptions.args.push(`--proxy-server=${u.protocol}//${u.host}`);
         } catch {}
       }
@@ -63,10 +64,10 @@ export class MetacriticScraper {
         const page = await browser.newPage();
         this.pagesOpenedCount++;
 
-        const proxy = config.getActiveProxyUrl();
-        if (proxy) {
+        // Authenticate using the EXACT same proxy URL configured for this browser instance
+        if (this.currentProxyUrl) {
           try {
-            const u = new URL(proxy);
+            const u = new URL(this.currentProxyUrl);
             if (u.username && u.password) {
               await page.authenticate({
                 username: decodeURIComponent(u.username),
@@ -80,17 +81,6 @@ export class MetacriticScraper {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         );
         await page.setViewport({ width: 1280, height: 800 });
-
-        // Block fonts and media to save bandwidth and speed up page load
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
-          const type = req.resourceType();
-          if (['font', 'media'].includes(type)) {
-            req.abort();
-          } else {
-            req.continue();
-          }
-        });
 
         return page;
       } catch (err: any) {
@@ -107,16 +97,17 @@ export class MetacriticScraper {
     let lastError: any;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       let page: Page | null = null;
-      const proxyUrl = config.getActiveProxyUrl();
       try {
         page = await this.createPage();
+        const activeProxy = this.currentProxyUrl;
         const result = await action(page);
-        if (proxyUrl) config.markProxySuccess(proxyUrl);
+        if (activeProxy) config.markProxySuccess(activeProxy);
         return result;
       } catch (err: any) {
         lastError = err;
-        if (proxyUrl) config.markProxyFailed(proxyUrl);
-        console.warn(`[Metacritic] Page action failed (attempt ${attempt}/${maxRetries}): ${err.message}. Recycling browser & rotating proxy...`);
+        const failedProxy = this.currentProxyUrl;
+        if (failedProxy) config.markProxyFailed(failedProxy);
+        console.warn(`[Metacritic] Page action failed (attempt ${attempt}/${maxRetries}): ${err.message}. Rotating proxy & recycling browser...`);
         config.rotateProxy();
         await this.close();
         if (attempt < maxRetries) {
@@ -147,7 +138,10 @@ export class MetacriticScraper {
         const headings = Array.from(document.querySelectorAll('h2, h3, div, span'));
         const nrHeading = headings.find(h => h.textContent?.trim().toLowerCase() === 'new releases');
         const carousel = nrHeading?.closest('.global-carousel');
-        const anchors = carousel ? Array.from(carousel.querySelectorAll('a')) : Array.from(document.querySelectorAll('a'));
+        let anchors = carousel ? Array.from(carousel.querySelectorAll('a')) : [];
+        if (anchors.length === 0) {
+          anchors = Array.from(document.querySelectorAll('a'));
+        }
 
         const found = new Set<string>();
         const blacklist = ['all', 'pc', 'ps5', 'ps4', 'xbox-series-x', 'xbox-one', 'nintendo-switch', 'news', 'features'];
@@ -165,6 +159,10 @@ export class MetacriticScraper {
         }
         return Array.from(found);
       });
+
+      if (urls.length === 0) {
+        throw new Error('Discovered 0 games on /game/ page (proxy blocked or challenge received)');
+      }
 
       console.log(`[Metacritic] Discovered ${urls.length} games on /game/ page`);
       return urls;
@@ -200,6 +198,10 @@ export class MetacriticScraper {
         }
         return Array.from(found);
       });
+
+      if (urls.length === 0 && pageNumber === 1) {
+        throw new Error(`Discovered 0 games on SEE ALL page ${pageNumber} (proxy blocked or challenge received)`);
+      }
 
       console.log(`[Metacritic] Discovered ${urls.length} games on SEE ALL page ${pageNumber}`);
       return urls;
@@ -417,6 +419,7 @@ export class MetacriticScraper {
       this.browser = null;
       this.pagesOpenedCount = 0;
     }
+    this.currentProxyUrl = null;
   }
 }
 
