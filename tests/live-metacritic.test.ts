@@ -4,14 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { metacriticScraper } from '../src/services/metacritic.js';
 
-describe('Live Metacritic Real-World Scraping & Logs Verification', { timeout: 60000 }, () => {
+describe('Live Metacritic Real-World Scraping & Logs Verification', { timeout: 120000 }, () => {
   after(async () => {
     try {
       await metacriticScraper.close();
     } catch {}
   });
 
-  it('scrapes real game details and platform scores when network is available', async () => {
+  it('scrapes real game details and platform scores when network is available', { timeout: 110000 }, async () => {
     const today = new Date().toISOString().split('T')[0];
     const testUrl = 'https://www.metacritic.com/game/elden-ring/';
 
